@@ -1,5 +1,7 @@
 """Result type shared by every tool: a value plus the evidence a human can check."""
 
+import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +29,8 @@ class Answer:
     deterministic: bool = True
     evidence: list[Evidence] = field(default_factory=list)
     note: str = ""
+    # Tokens spent inside the tool itself (only the vision fallback calls an LLM).
+    usage: dict = field(default_factory=dict)
 
     def summary(self, max_evidence: int = 10) -> dict:
         """Compact form, safe to feed back to an LLM or print."""
@@ -49,3 +53,26 @@ class ToolError(Exception):
 
     The message is shown to the LLM so it can retry with other arguments.
     """
+
+
+def parse_llm_answer(text: str) -> dict:
+    """Pull {"answer", "unit", "explanation"} out of an LLM reply, tolerating chatter."""
+    data = None
+    for m in re.finditer(r"\{.*\}", text, re.S):
+        try:
+            data = json.loads(m[0])
+            break
+        except json.JSONDecodeError:
+            continue
+    if not isinstance(data, dict):
+        num = re.search(r"-?\d[\d,]*(?:\.\d+)?", text)
+        data = {"answer": num[0] if num else text.strip(), "explanation": text.strip()[:300]}
+    value = data.get("answer")
+    if isinstance(value, str):
+        v = value.strip().replace(",", "")
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+            value = float(v)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    data["answer"] = value
+    return data

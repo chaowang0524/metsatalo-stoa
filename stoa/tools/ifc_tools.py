@@ -6,7 +6,9 @@ converted to metres, m² and m³.
 """
 
 import functools
+import json
 import re
+import threading
 import unicodedata
 
 import ifcopenshell
@@ -49,9 +51,18 @@ IFC2X3_ALIASES = {
 UNITS = {"area": "m2", "volume": "m3", "length": "m"}
 
 
+# ifcopenshell isn't safe to open files or tessellate from several threads at once.
+_LOCK = threading.RLock()
+
+
 @functools.lru_cache(maxsize=8)
-def open_ifc(path: str) -> ifcopenshell.file:
+def _open(path: str) -> ifcopenshell.file:
     return ifcopenshell.open(path)
+
+
+def open_ifc(path: str) -> ifcopenshell.file:
+    with _LOCK:
+        return _open(path)
 
 
 @functools.lru_cache(maxsize=8)
@@ -69,10 +80,11 @@ _GEOM = ifcopenshell.geom.settings()
 
 @functools.lru_cache(maxsize=4096)
 def _shape(path: str, step_id: int):
-    try:
-        return ifcopenshell.geom.create_shape(_GEOM, open_ifc(path).by_id(step_id))
-    except Exception:
-        return None
+    with _LOCK:
+        try:
+            return ifcopenshell.geom.create_shape(_GEOM, open_ifc(path).by_id(step_id))
+        except Exception:
+            return None
 
 
 def _norm(s: str | None) -> str:
@@ -149,7 +161,13 @@ def _quantity(path: str, e, quantity: str) -> tuple[float | None, str]:
     sh = _shape(path, e.id())
     if sh is None:
         return None, "no quantity or geometry"
-    g = sh.geometry
+    try:
+        return _geometry_quantity(sh.geometry, quantity, kind)
+    except ValueError:  # empty tessellation
+        return None, "empty geometry"
+
+
+def _geometry_quantity(g, quantity: str, kind: str) -> tuple[float | None, str]:
     if kind == "volume":
         return us.get_volume(g), "geometry volume"
     if quantity in ("net_floor_area", "gross_floor_area", "net_area"):
@@ -157,8 +175,7 @@ def _quantity(path: str, e, quantity: str) -> tuple[float | None, str]:
     if quantity in ("net_side_area", "gross_side_area"):
         return us.get_side_area(g), "geometry side area"
     if quantity == "length":
-        x, y = us.get_x(g), us.get_y(g)
-        return max(x, y), "geometry bounding-box length"
+        return max(us.get_x(g), us.get_y(g)), "geometry bounding-box length"
     if quantity == "height":
         return us.get_z(g), "geometry height"
     return None, "unsupported"
@@ -247,9 +264,11 @@ def ifc_model_facts(path: str) -> Answer:
             continue
         if n:
             counts[c] = n
+    length = _scales(path)["length"]
     storeys = []
     for s in f.by_type("IfcBuildingStorey"):
-        storeys.append({"name": s.Name, "elevation": s.Elevation})
+        elev = round(s.Elevation * length, 3) if s.Elevation is not None else None
+        storeys.append({"name": s.Name, "elevation_m": elev})
     spaces = [_label(s) for s in f.by_type("IfcSpace")[:80]]
     facts = {
         "project": [proj[0].Name, proj[0].LongName] if proj else None,
@@ -259,3 +278,69 @@ def ifc_model_facts(path: str) -> Answer:
         "spaces_sample": spaces,
     }
     return Answer(value=facts, method="IFC model overview", deterministic=True)
+
+
+def _materials(e) -> list[str]:
+    mats = ue.get_materials(e) or []
+    if not mats and (t := ue.get_type(e)):
+        mats = ue.get_materials(t) or []
+    return sorted({m.Name for m in mats if getattr(m, "Name", None)})
+
+
+def _common_props(e) -> dict:
+    """Pset_*Common properties (IsExternal, FireRating, LoadBearing, ...) from the
+    element and its type; the element's own values win."""
+    out = {}
+    for src in (ue.get_type(e), e):
+        if src is None:
+            continue
+        for name, props in ue.get_psets(src, psets_only=True).items():
+            if name.startswith("Pset_") and name.endswith("Common"):
+                out.update({k: v for k, v in props.items() if k != "id" and v not in (None, "")})
+    return out
+
+
+def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None) -> Answer:
+    """Elements of one class grouped by identical type, storey, materials, properties
+    and size, with counts and summed quantities. Grouping keeps the table small
+    enough to send to the LLM cheaply."""
+    elems = _elements(path, ifc_class, storey)
+    length = _scales(path)["length"]
+    groups: dict[str, dict] = {}
+    evidence = []
+    for e in elems:
+        row = {}
+        if t := ue.get_type(e):
+            row["type"] = t.Name
+        if s := _storey_of(e):
+            row["storey"] = s.Name
+        for attr in ("OverallWidth", "OverallHeight"):
+            if (v := getattr(e, attr, None)) is not None:
+                row[attr] = round(v * length, 3)
+        if mats := _materials(e):
+            row["materials"] = mats
+        if props := _common_props(e):
+            row["props"] = props
+        if "type" not in row:
+            row["name"] = _label(e)
+        key = json.dumps(row, sort_keys=True, default=str)
+        g = groups.setdefault(key, {**row, "count": 0})
+        g["count"] += 1
+        for q in _row_quantities(ifc_class):
+            if qv := _quantity(path, e, q)[0]:
+                g[f"total_{q}"] = round(g.get(f"total_{q}", 0) + qv, 3)
+        evidence.append(Evidence(ref=e.GlobalId, label=_label(e)))
+    rows = sorted(groups.values(), key=lambda g: -g["count"])[:120]
+    return Answer(
+        value={"elements": len(elems), "groups": len(groups), "rows": rows},
+        method=f"IFC element table for {ifc_class}",
+        evidence=evidence,
+    )
+
+
+def _row_quantities(ifc_class: str) -> tuple[str, ...]:
+    if ifc_class == "IfcSpace":
+        return ("net_floor_area", "net_volume")
+    if ifc_class in ("IfcWall", "IfcBeam", "IfcColumn", "IfcMember", "IfcRailing"):
+        return ("length", "net_volume")
+    return ("net_volume",)
