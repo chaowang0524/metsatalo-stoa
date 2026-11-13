@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.mypy_cache/
+.DS_Store
+secreat.toml
+*.toml.local
+.env
+junction-dataset-preview/
+junction-dataset-preview.zip
+logs/
+out/
