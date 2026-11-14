@@ -76,6 +76,34 @@ still a vision estimate (`deterministic=False`); `note` records the scope and
 Truncated or invalid inventories are recorded as failures with their billed
 usage retained. Other questions keep the general vision prompt.
 
+### CubiCasa-compatible Gemini detection cache
+
+```bash
+uv run python -m stoa.cubicasa_gemini --limit 3
+uv run python -m stoa.cubicasa_gemini --workers 8
+```
+
+This extracts all icon and room instances from each PNG with
+`gemini-4-hydrogen`, using the full image and high reasoning effort. Results go
+to `out/cubicasa_gemini_cache/<stem>.json`. Each file has the existing
+`file`, `icons`, `rooms` structure and CubiCasa class names. Every item has
+`class` and `bbox: [x0, y0, x1, y1]` in original PNG pixels. The model's
+normalized `[ymin, xmin, ymax, xmax]` coordinates are converted and validated
+before writing. All visible floors and neighboring fragments are in scope.
+The existing taxonomy includes tubs as `Bathtub` and has no shower class.
+
+Matching valid outputs are reused on restart. `--files a.png b.png` selects
+individual inputs, `--overwrite` reruns them, and `--output-dir` changes the
+destination. Raw responses, input/settings hashes, every attempt's usage and
+batch summaries are saved under `_audit/`. All API calls also appear in
+`logs/verda_calls.jsonl` with `run="cubicasa_gemini"`. Failed or truncated
+responses retain billed usage and receive bounded retries. Truncation doubles
+the output budget up to 65,536 tokens. If high/xhigh reasoning still exhausts
+that budget, the next attempt uses medium effort, recorded in its audit entry.
+Writes use atomic
+replacement. These are model estimates whose counting and localization
+accuracy should be checked against annotations.
+
 Every LLM call, including Gemini (`provider="google"`), goes through
 `stoa.verda.chat` and is logged with tokens, latency and `cost_usd` to
 `logs/verda_calls.jsonl`. Gemini costs use the paid-tier prices checked on

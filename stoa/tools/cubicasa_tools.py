@@ -16,9 +16,6 @@ import sys
 import threading
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 REPO = Path(__file__).resolve().parents[2] / "CubiCasa5k"
 WEIGHTS = REPO / "model_best_val_loss_var.pkl"
 CACHE = Path("out/cubicasa_cache")
@@ -40,6 +37,7 @@ _lock = threading.Lock()
 def _load():
     global _model, _device
     if _model is None:
+        import numpy as np
         import torch
 
         sys.path.insert(0, str(REPO))
@@ -70,6 +68,8 @@ def _load():
 
 def _predict(path: Path):
     """Averaged network output over 4 rotations, shape (44, H, W), and the scale used."""
+    import cv2
+    import numpy as np
     import torch
     import torch.nn.functional as F
 
@@ -99,6 +99,8 @@ def analyse(path: str | Path) -> dict:
     cached = CACHE / f"{path.stem}.json"
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8-sig"))
+    import numpy as np
+
     with _lock:  # one drawing at a time on the GPU
         _load()
         from floortrans.post_prosessing import get_polygons, split_prediction
