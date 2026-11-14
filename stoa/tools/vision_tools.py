@@ -41,6 +41,9 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
     Kimi defaults to low effort with thinking enabled.
     """
     b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
+    thinking = {"reasoning_effort": effort} if effort else {}
+    if effort and endpoint == "kimi":
+        thinking["extra_body"] = {"thinking": {"type": "enabled"}}
     resp = verda.chat(
         "vision fallback",
         [{
@@ -54,7 +57,7 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
         endpoint=endpoint,
         # Inherit Kimi's shared budget, including reasoning and the final answer.
         max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 4000 if effort else 400),
-        **({"reasoning_effort": effort, "extra_body": {"thinking": {"type": "enabled"}}} if effort else {}),
+        **thinking,
         temperature=0,
     )
     data = parse_llm_answer(verda.text_of(resp))

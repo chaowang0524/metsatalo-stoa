@@ -34,6 +34,8 @@ class Profile:
     table: str  # composes answers from PDF schedule text (pdf_page_text)
     vision: str  # reads rendered drawings
     vision_effort: str | None = None  # None inherits the endpoint's default effort
+    raster_vision: str | None = None  # optional override for raster-only drawings
+    cubicasa_vision: str | None = None  # source-specific override for CubiCasa drawings
 
 
 # Benchmark on 200 questions (VERDA_LOG.md, 2026-11-14): deepseek routes
@@ -45,7 +47,11 @@ PROFILES = {
     "nemotron": Profile("nemotron", "nemotron", "nemotron"),
     # Default effort ran a median 4.5k reasoning tokens per drawing and hit the
     # 12k cap on 25% of calls; "low" uses ~250.
-    "hybrid": Profile(route="deepseek", table="kimi", vision="kimi", vision_effort="low"),
+    # Matched CubiCasa seed-1024 run: Gemini 25/30 vs Kimi 17/30.
+    "hybrid": Profile(route="deepseek", table="kimi", vision="kimi",
+                      vision_effort="low", cubicasa_vision="gemini"),
+    "hybrid_gemini": Profile(route="deepseek", table="kimi", vision="kimi",
+                             vision_effort="low", raster_vision="gemini"),
 }
 ROUTER = os.environ.get("STOA_ROUTER", "hybrid")
 
@@ -314,10 +320,19 @@ def _has_tables(info: FileInfo) -> bool:
     return bool(pdf_tables.tables(str(info.path)))
 
 
+def _vision_endpoint(info: FileInfo, prof: Profile) -> str:
+    if info.kind == "raster":
+        if prof.cubicasa_vision and any(part.casefold() == "cubicasa5k" for part in info.path.parts):
+            return prof.cubicasa_vision
+        if prof.raster_vision:
+            return prof.raster_vision
+    return prof.vision
+
+
 def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> Answer:
     if tool.name == "ask_vision_model":
         return tool.fn(_source_path(tool, info), args.get("question", ""), context=ctx,
-                       endpoint=prof.vision, effort=prof.vision_effort)
+                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
     return tool.fn(_source_path(tool, info), **args)
 
 
@@ -370,7 +385,7 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
     # Only the vision model applies (raster drawing): skip the routing call.
     if [t.name for t in tools] == ["ask_vision_model"]:
         res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
-                                                   endpoint=prof.vision, effort=prof.vision_effort)
+                                                   endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
         res.calls.append({"tool": "ask_vision_model", "args": {"question": question}})
         res.add_usage(res.answer.usage)
         return res

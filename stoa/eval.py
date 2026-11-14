@@ -157,7 +157,7 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip", help="comma-separated sources to leave out")
-    ap.add_argument("--router", help="model profile: hybrid (default), deepseek, kimi or nemotron")
+    ap.add_argument("--router", help="model profile: hybrid (default), hybrid_gemini, deepseek, kimi or nemotron")
     ap.add_argument("--judge-workers", type=int, default=2, help="parallel text judges after answering (default: 2)")
     ap.add_argument("--score-existing", type=Path, help="grade a saved results file without rerunning answers")
     args = ap.parse_args()

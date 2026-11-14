@@ -1,4 +1,4 @@
-"""The only way this project calls the Verda inference endpoint.
+"""Shared inference wrapper for Verda and the Gemini Developer API.
 
 Every call appends one line to logs/verda_calls.jsonl (see
 VERDA_ENDPOINT_GUIDELINES.md): purpose, model, tokens, latency. That log is our
@@ -28,11 +28,12 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
 _load_dotenv()
 
 from endpoints.verda import deepseek, kimi, nemotron  # noqa: E402
+from endpoints import gemini  # noqa: E402
 
 # One module per endpoint in endpoints/verda/, each with its USD per million
 # token prices as PRICE_IN / PRICE_OUT (missing means unknown, logged as 0).
 # "inference" and "vision" are the old names, kept so existing callers don't break.
-ENDPOINTS = {m.NAME: m for m in (deepseek, kimi, nemotron)}
+ENDPOINTS = {m.NAME: m for m in (deepseek, kimi, nemotron, gemini)}
 ENDPOINTS["inference"] = deepseek
 ENDPOINTS["vision"] = nemotron
 
@@ -43,14 +44,18 @@ def client(endpoint: str = "deepseek") -> OpenAI:
     ep = ENDPOINTS[endpoint]
     if ep.NAME not in _clients:
         base = getattr(ep, "BASE_URL", None) or os.environ[ep.BASE_URL_ENV]
-        _clients[ep.NAME] = OpenAI(base_url=base, api_key=os.environ[ep.API_KEY_ENV])
+        key_names = (ep.API_KEY_ENV, *getattr(ep, "API_KEY_ENV_ALIASES", ()))
+        key = next((os.environ[name] for name in key_names if os.environ.get(name)), None)
+        if not key:
+            raise ValueError(f"Set {ep.API_KEY_ENV} in .env for endpoint {ep.NAME}")
+        _clients[ep.NAME] = OpenAI(base_url=base, api_key=key)
     return _clients[ep.NAME]
 
 
 def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoint: str = "deepseek", **kwargs):
     """chat.completions.create plus a log line. `purpose` says why we called.
 
-    `endpoint` is a name in ENDPOINTS: deepseek, kimi or nemotron (vision).
+    `endpoint` is a name in ENDPOINTS: deepseek, kimi, nemotron or gemini.
     """
     ep = ENDPOINTS[endpoint]
     kwargs = {**ep.DEFAULTS, **kwargs}
@@ -66,8 +71,7 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
         raise
     finally:
         usage = getattr(resp, "usage", None)
-        p = getattr(usage, "prompt_tokens", 0) or 0
-        c = getattr(usage, "completion_tokens", 0) or 0
+        measured = _usage_values(usage, ep)
         has_image = any(
             isinstance(m.get("content"), list)
             and any(part.get("type") == "image_url" for part in m["content"])
@@ -78,12 +82,12 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
             "purpose": purpose,
             "model": kwargs["model"],
             "endpoint": ep.NAME,
-            "prompt_tokens": p,
-            "completion_tokens": c,
+            "provider": getattr(ep, "PROVIDER", "verda"),
+            **measured,
             "reasoning_tokens": getattr(usage, "reasoning_tokens", None),
             "has_image": has_image,
             "latency_s": round(time.perf_counter() - t0, 3),
-            "cost_usd": round((p * getattr(ep, "PRICE_IN", 0) + c * getattr(ep, "PRICE_OUT", 0)) / 1e6, 6),
+            "cost_usd": round(measured["cost_usd"], 6),
             "error": error,
             **(context or {}),
         }
@@ -92,13 +96,27 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def usage_of(resp, endpoint: str) -> dict:
-    """Token counts and USD cost of one response, at that endpoint's prices."""
-    ep = ENDPOINTS[endpoint]
-    u = resp.usage
-    p, c = (u.prompt_tokens or 0, u.completion_tokens or 0) if u else (0, 0)
+def _usage_values(u, ep) -> dict:
+    p = getattr(u, "prompt_tokens", 0) or 0
+    c = getattr(u, "completion_tokens", 0) or 0
+    extra = {}
+    if getattr(ep, "PROVIDER", None) == "google":
+        # Google's compatibility response can omit thinking from completion_tokens
+        # while including it in total_tokens. Preserve the raw count and account
+        # for the remaining output once, without double-counting inclusive totals.
+        reported = c
+        total = getattr(u, "total_tokens", None)
+        if isinstance(total, int):
+            c = max(c, total - p)
+        extra = {"reported_completion_tokens": reported,
+                 "unattributed_output_tokens": c - reported, "total_tokens": total}
     cost = (p * getattr(ep, "PRICE_IN", 0) + c * getattr(ep, "PRICE_OUT", 0)) / 1e6
-    return {"prompt_tokens": p, "completion_tokens": c, "cost_usd": cost}
+    return {"prompt_tokens": p, "completion_tokens": c, "cost_usd": cost, **extra}
+
+
+def usage_of(resp, endpoint: str) -> dict:
+    """Token counts and USD cost of one response, including Google output gaps."""
+    return _usage_values(resp.usage, ENDPOINTS[endpoint])
 
 
 def text_of(resp) -> str:

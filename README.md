@@ -7,6 +7,8 @@ Current pipeline (flowchart): `PIPELINE.md`. Verda rules: `VERDA_ENDPOINT_GUIDEL
 Install the main pipeline dependencies into `.venv` with `uv sync` (Python 3.13).
 Copy `.env.example` to `.env` and fill in the Verda URL and API keys. The default
 `hybrid` profile needs both `VERDA_INFERENCE_API_KEY` (DeepSeek) and `VERDA_KIMI`.
+For CubiCasa drawings it also needs `GEMINI_API_KEY` (or `Gemini_API_KEY`), using
+`gemini-4-hydrogen` by default. Other sources retain their existing model routing.
 If only the DeepSeek key is available, set `STOA_ROUTER=deepseek` in `.env`.
 The application reads `.env` automatically; keep real keys out of version control.
 
@@ -47,6 +49,40 @@ This writes a new `*_scored_<time>.jsonl` file and preserves the input. Rows
 already carrying a text score are reused. `stoa.compare` also reuses these scores.
 
 Every Verda call is logged to `logs/verda_calls.jsonl`.
+
+### Gemini counting for CubiCasa
+
+Set `GEMINI_API_KEY` (or `Gemini_API_KEY`) in `.env`. The default `hybrid`
+profile now sends raster files under a `cubicasa5k` directory to Gemini:
+
+```powershell
+uv run python -m stoa.eval --source cubicasa5k --per-source 30 --workers 2 --seed 1024
+```
+
+The optional `hybrid_gemini` profile sends all raster drawings to
+`gemini-4-hydrogen` through Google's [OpenAI-compatible API](https://aistudio.google.com/docs/openai).
+DeepSeek routing, Kimi PDF table/vision handling and text grading keep their
+existing endpoints. The raster experiment uses the same prompt, 1600-pixel
+image cap, `reasoning_effort="low"` and `max_tokens=4096` as the Kimi baseline.
+`hybrid` remains the default. `GEMINI_MODEL` can override the Gemini model id.
+
+Gemini calls go through the shared wrapper and are logged to
+`logs/verda_calls.jsonl` with `endpoint="gemini"` and `provider="google"`.
+Cost estimates use the standard paid-tier prices checked on 2026-11-14:
+$1.50 input / $7.50 output per million tokens, including thinking. Free-tier
+allowances and cache discounts are not reflected; update prices if changing
+the model. See [Google's pricing](https://aistudio.google.com/docs/pricing#gemini-4-hydrogen).
+When Google's compatibility response reports a total larger than input plus
+completion tokens, the difference is included in output usage/cost. Logs retain
+`reported_completion_tokens`, `unattributed_output_tokens` and `total_tokens`
+so this adjustment can be audited without counting thinking twice.
+
+Matched CubiCasa run (30 questions, seed 1024): Gemini 4 Hydrogen answered
+25/30 correctly (83.3%), versus Kimi's 17/30 (56.7%), fixing eight questions
+with no correctness regressions. Estimated paid-tier cost was $0.155036 vs
+$0.153496; mean per-question latency was 6.33 s vs 4.86 s. Gemini still missed
+three of four window questions. This is a small-sample comparison, not a
+dataset-wide accuracy estimate.
 
 The experimental CubiCasa model is not part of the main dependency setup. It
 also needs the third-party `CubiCasa5k` source repository, pretrained weights,
