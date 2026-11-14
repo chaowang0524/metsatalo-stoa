@@ -75,6 +75,7 @@ function valueOf(fact) {
 const factById = (id) => id === "__answer" ? state.adhoc : state.doc.facts.find((f) => f.id === id);
 
 // ---------- loading ----------
+let drawings = []; // index entries in picker order
 async function loadIndex() {
   const list = await (await fetch("/api/drawings")).json();
   const picker = $("#picker");
@@ -87,14 +88,21 @@ async function loadIndex() {
   }
   for (const src of ["ifc_models", "swiss_dwellings", "cubicasa5k"]) if (groups[src]) picker.append(groups[src]);
   for (const g of Object.values(groups)) if (!g.parentNode) picker.append(g);
+  const byId = Object.fromEntries(list.map((d) => [d.id, d]));
+  drawings = [...picker.options].map((o) => byId[o.value]); // picker order = arrow order
   if (!list.length) { toast("No facts yet: run  uv run python -m stoa.ui.facts", 10000); return; }
   const want = decodeURIComponent(location.hash.slice(1));
-  picker.value = list.some((d) => d.id === want) ? want : list[0].id;
-  await loadDoc(picker.value);
+  await loadDoc(byId[want] ? want : drawings[0].id);
 }
 
 async function loadDoc(id) {
+  const token = ++loadDoc.n;
+  $("#picker").value = id;
+  const i = drawings.findIndex((d) => d.id === id);
+  $("#nav-prev").disabled = i <= 0;
+  $("#nav-next").disabled = i < 0 || i >= drawings.length - 1;
   const doc = await (await fetch(`/api/drawings/${id}`)).json();
+  if (token !== loadDoc.n) return; // a later arrow press or search pick won
   state.doc = doc; state.edits = doc.edits; state.history = [];
   state.pinned = state.hover = state.single = state.adhoc = state.addKind = null;
   history.replaceState(null, "", `#${id}`);
@@ -586,7 +594,75 @@ $("#btn-share-3d").onclick = (e) => {
 };
 
 $("#picker").onchange = (e) => loadDoc(e.target.value);
+loadDoc.n = 0;
+
+// ---------- navigation: prev / next arrows and file-name search ----------
+function step(d) {
+  const i = drawings.findIndex((x) => x.id === $("#picker").value) + d;
+  if (i >= 0 && i < drawings.length) loadDoc(drawings[i].id);
+}
+$("#nav-prev").onclick = () => step(-1);
+$("#nav-next").onclick = () => step(1);
+
+const search = { input: $("#search-input"), list: $("#search-results"), hits: [], sel: 0 };
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function runSearch() {
+  const terms = search.input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return closeSearch();
+  // Every term must appear in the file name or source; names starting with the first term come first.
+  search.hits = drawings
+    .filter((d) => terms.every((t) => `${d.file} ${d.source}`.toLowerCase().includes(t)))
+    .sort((a, b) => b.file.toLowerCase().startsWith(terms[0]) - a.file.toLowerCase().startsWith(terms[0]))
+    .slice(0, 50);
+  search.sel = 0;
+  const re = new RegExp(`(${terms.map(escRe).join("|")})`, "gi");
+  search.list.replaceChildren(...search.hits.map((d, i) => {
+    const name = h("span");
+    for (const [j, part] of d.file.split(re).entries()) name.append(j % 2 ? h("mark", { textContent: part }) : part);
+    const li = h("li", { role: "option", id: `hit-${i}` }, name, h("span", { className: "src", textContent: d.source }));
+    li.onpointerdown = (e) => { e.preventDefault(); pickHit(i); }; // before the input's blur
+    li.onpointermove = () => { search.sel = i; markSel(); };
+    return li;
+  }));
+  if (!search.hits.length) search.list.append(h("li", { className: "none", textContent: "No drawing matches" }));
+  search.list.hidden = false;
+  $("#search").setAttribute("aria-expanded", "true");
+  markSel();
+}
+function markSel() {
+  [...search.list.children].forEach((li, i) => li.setAttribute("aria-selected", i === search.sel && !!search.hits.length));
+  search.list.children[search.sel]?.scrollIntoView({ block: "nearest" });
+  search.input.setAttribute("aria-activedescendant", search.hits.length ? `hit-${search.sel}` : "");
+}
+function closeSearch() {
+  search.list.hidden = true; search.hits = [];
+  $("#search").setAttribute("aria-expanded", "false");
+}
+function pickHit(i) {
+  const d = search.hits[i];
+  if (!d) return;
+  closeSearch();
+  search.input.value = ""; search.input.blur();
+  loadDoc(d.id);
+}
+search.input.oninput = runSearch;
+search.input.onfocus = runSearch;
+search.input.onblur = closeSearch;
+search.input.onkeydown = (e) => {
+  const n = search.hits.length;
+  if (e.key === "ArrowDown" && n) { e.preventDefault(); search.sel = (search.sel + 1) % n; markSel(); }
+  else if (e.key === "ArrowUp" && n) { e.preventDefault(); search.sel = (search.sel - 1 + n) % n; markSel(); }
+  else if (e.key === "Enter") { e.preventDefault(); pickHit(search.sel); }
+  else if (e.key === "Escape") { e.stopPropagation(); search.input.value = ""; search.input.blur(); }
+};
+
 window.addEventListener("keydown", (e) => {
+  const typing = e.target.closest?.("input, textarea, select") || $("#render-dlg").open;
+  if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (e.key === "ArrowLeft") return step(-1);
+    if (e.key === "ArrowRight") return step(1);
+    if (e.key === "/") { e.preventDefault(); return search.input.focus(); }
+  }
   if (e.key === "Escape") {
     if (menu) return closeMenu();
     if (state.addKind) return arm(null);
