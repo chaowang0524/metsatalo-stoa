@@ -13,6 +13,7 @@ which then composes an answer.
 
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -427,6 +428,12 @@ def _describe(info: FileInfo) -> str:
                 text += "\n" + piping
         except Exception:  # an unreadable model still gets the other tools' errors
             pass
+    if info.dxf:
+        try:
+            names = Counter(r.name for r in dxf_tools.load_plan(str(info.dxf)).rooms if r.name)
+            text += "\nRoom labels on the plan (count): " + "; ".join(f"{n} ({k})" for n, k in names.most_common())
+        except Exception:
+            pass
     if info.path.suffix.lower() == ".pdf" and _has_tables(info):
         text += "\nSchedules on this sheet (for pdf_table_query / pdf_table_rows):\n" + pdf_tables.describe_tables(str(info.path))
         text += ("\nSchedule filtering: apply EVERY qualifier in the question, including product/type, "
@@ -457,6 +464,26 @@ def _cited(evidence: list, ids) -> list:
         if s.isdigit() and 1 <= int(s) <= len(evidence) and evidence[int(s) - 1] not in picked:
             picked.append(evidence[int(s) - 1])
     return picked
+
+
+# Schedule rows can carry a quantity column (one row, Qty 5), so a count over
+# them needn't equal the number of rows cited.
+ROW_TOOLS = {"pdf_table_rows", "pdf_page_text"}
+
+
+def _reconcile_count(value, unit, cited: list, ids, calls: list) -> tuple:
+    """A count of N cites N items. When the LLM's number and its citations
+    disagree (it said 9 and cited 8 rooms), trust the citations: they are what
+    the UI highlights and the engineer checks."""
+    if unit != "count" or not isinstance(ids, list) or not cited or any(c["tool"] in ROW_TOOLS for c in calls):
+        return value, ""
+    n = len({e.ref for e in cited})
+    try:
+        if float(value) == n:
+            return value, ""
+    except (TypeError, ValueError):
+        pass
+    return n, f"Corrected from {value}: the answer cites {n} items. "
 
 
 def answer(path: str | Path, question: str, context: dict | None = None, router: str | None = None) -> Result:
@@ -513,11 +540,13 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
                 res.error = "Final answer truncated at the output token limit"
                 return res
             data = parse_llm_answer(verda.text_of(resp))
+            cited = _cited(evidence, data.get("evidence"))
+            value, fix = _reconcile_count(data["answer"], data.get("unit"), cited, data.get("evidence"), res.calls)
             res.answer = Answer(
-                value=data["answer"], unit=data.get("unit"),
+                value=value, unit=data.get("unit"),
                 method="LLM answer from tool output: " + ", ".join(c["tool"] for c in res.calls),
-                deterministic=False, evidence=_cited(evidence, data.get("evidence")),
-                note=str(data.get("explanation", ""))[:500],
+                deterministic=False, evidence=cited,
+                note=(fix + str(data.get("explanation", "")))[:500],
             )
             return res
         messages.append({
