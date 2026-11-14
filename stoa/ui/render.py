@@ -12,10 +12,10 @@ from pathlib import Path
 
 from google.genai import types
 
-from endpoints.Google import gemini
+from endpoints import gemini
 from stoa import verda  # noqa: F401  (loads .env)
 
-MODEL = gemini.MODEL
+MODEL = gemini.IMAGE_MODEL
 LOG_PATH = Path("logs/image_calls.jsonl")
 
 STYLES = {

@@ -17,7 +17,7 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 ## Web UI (`stoa/ui/`)
 
 - `uv run python -m stoa.ui.facts` pre-computes the facts for every swiss_dwellings and cubicasa5k drawing (~10 s, no LLM) into `out/facts/`. Swiss plans are rendered from the DXF to SVG, so highlights use exact CAD geometry. CubiCasa plans use the cached detector boxes.
-- `source ~/.zshrc && uv run uvicorn stoa.ui.server:app --port 8000` starts the server. The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini `gemini-nano-banana-2.1` (`endpoints/Google/gemini.py`, key in the `GEMINI` env var from `~/.zshrc`).
+- `uv run uvicorn stoa.ui.server:app --port 8000` starts the server (Kimi still needs `source ~/.zshrc` first for `VERDA_KIMI`). The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini `gemini-nano-banana-2.1` (`endpoints/gemini.py` `IMAGE_MODEL`, same `GEMINI_API_KEY` from `.env`).
 
 ## Verda endpoints
 
@@ -25,7 +25,7 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 - `deepseek` (`deepseek-4-1-flash-1017`, $0.15/$0.60 per M tokens): cheap and reliable at tool calling. It **does** read images sent as `image_url` data URIs, even though `usage` reports only a few hundred prompt tokens for them. The gateway has no `/v1/files`, so DeepSeek's `file_id` image input isn't available.
 - `kimi` (`kimi-k3-1-pro`, $2/$10): better at reading drawings and schedules. Thinking is enabled with `reasoning_effort="low"` and `max_tokens=4096` by default for routing, schedule answers and vision. The token budget includes reasoning and the final answer. DeepSeek remains the hybrid router; Kimi previously skipped tools with thinking disabled. Unrestricted effort used up to 12k tokens.
 - `nemotron` (Nemotron 3.5 Super VL, a dedicated container, no per-token price): calls have taken ~250 s at times (cold start or overload), so the benchmark left it out.
-- `gemini` is a separate Google Developer API endpoint (`endpoints/gemini.py`), not served by Verda. `hybrid_gemini` uses `gemini-4-hydrogen` for raster drawings, retaining DeepSeek routing and Kimi PDF handling. Put `GEMINI_API_KEY` (also accepts `Gemini_API_KEY`) in `.env`. Calls still go through `stoa.verda.chat` and its log, with `provider="google"`. Defaults: low reasoning and 4096 output tokens. Google output usage includes any positive gap between total and prompt + reported completion tokens; raw fields are retained for auditing.
+- `gemini` is a separate Google Developer API endpoint (`endpoints/gemini.py`, the only Gemini module: OpenAI-compatible chat for vision and a `google-genai` `client()` for the 3D render), not served by Verda. `hybrid_gemini` uses `gemini-4-hydrogen` for raster drawings, retaining DeepSeek routing and Kimi PDF handling. Put `GEMINI_API_KEY` (also accepts `Gemini_API_KEY`) in `.env`; don't export it from `~/.zshrc`, because a shell variable takes precedence over `.env`. Calls still go through `stoa.verda.chat` and its log, with `provider="google"`. Defaults: low reasoning and 4096 output tokens. Google output usage includes any positive gap between total and prompt + reported completion tokens; raw fields are retained for auditing.
 - The text may arrive in `reasoning_content` instead of `content`. Use `verda.text_of(resp)`.
 
 ## Pipeline and evaluation
