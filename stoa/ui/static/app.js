@@ -341,9 +341,11 @@ function drawHighlight() {
       continue;
     }
     n++;
-    shapeEl(it.shape, { class: `ov ov-hl${one ? " one" : ""}`, fill: c, stroke: c, ...tag }, layer);
+    // The room total repeats the rooms by name, so it is numbered only (outlined while its row is hovered).
+    const total = f.id === "room";
+    if (!total || one) shapeEl(it.shape, { class: `ov ov-hl${one ? " one" : ""}`, fill: c, stroke: c, ...tag }, layer);
     const b = bboxOf(it.shape);
-    const [cx, cy] = it.shape.poly ? center(b) : [b[0], b[1]];
+    const [cx, cy] = it.shape.poly || total ? center(b) : [b[0], b[1]];
     el("circle", { cx, cy, r: one ? r * 1.3 : r, fill: c, class: "badge-c", ...tag }, layer);
     el("text", { x: cx, y: cy, "font-size": (n > 99 ? 9 : 12) * k * (one ? 1.3 : 1), class: "badge-t" }, layer).textContent = n;
   }
