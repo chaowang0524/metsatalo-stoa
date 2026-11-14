@@ -384,9 +384,14 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
 
     # Only the vision model applies (raster drawing): skip the routing call.
     if [t.name for t in tools] == ["ask_vision_model"]:
-        res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
-                                                   endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
         res.calls.append({"tool": "ask_vision_model", "args": {"question": question}})
+        try:
+            res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
+                                                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
+        except vision_tools.VisionResponseError as exc:
+            res.add_usage(exc.usage)
+            res.error = str(exc)
+            return res
         res.add_usage(res.answer.usage)
         return res
     if not tools:

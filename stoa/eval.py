@@ -21,6 +21,7 @@ from pathlib import Path
 from stoa import pipeline
 from stoa.pipeline import answer
 from stoa.judge import JudgeError, judge_text
+from stoa.tools.vision_tools import INVENTORY_METHOD
 
 DATASET = Path("junction-dataset-preview")
 
@@ -71,7 +72,11 @@ def run_one(q: dict) -> dict:
     out.update(qid=q["id"], question=q["question"], source=q["source"], type=q["type"], gt=q["answer"],
                correct=score(q, value), seconds=round(time.perf_counter() - t0, 2))
     if out.get("answer"):
-        out["answer"]["evidence"] = out["answer"]["evidence"][:5]
+        if res.answer.method == INVENTORY_METHOD:
+            # The count is the list length: keep every item so it can be audited.
+            out["answer"] = res.answer.summary(max_evidence=len(res.answer.evidence))
+        else:
+            out["answer"]["evidence"] = out["answer"]["evidence"][:5]
     return out
 
 

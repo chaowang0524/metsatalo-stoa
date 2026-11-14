@@ -38,9 +38,11 @@ flowchart TB
     subgraph VISION["视觉问答"]
         direction TB
         S{"图纸来源"}
-        G["Gemini 4 Hydrogen<br/>CubiCasa 整图理解与计数"]
+        G["Gemini 4 Hydrogen<br/>CubiCasa 计数：辨认范围 · 列出对象"]
+        N["代码按对象清单计数<br/>保留住宅范围与逐项位置"]
         K["Kimi<br/>其他栅格图与视觉回退"]
         S -->|"CubiCasa"| G
+        G --> N
         S -->|"其他来源"| K
     end
 
@@ -51,7 +53,7 @@ flowchart TB
     D --> OUT
     C1 --> OUT
     C2 --> OUT
-    G --> OUT
+    N --> OUT
     K --> OUT
     OUT(["返回结果<br/>答案 · 单位 · 方法 · 证据 · 确定性标记"])
 
@@ -63,7 +65,7 @@ flowchart TB
     classDef output fill:#0f172a,stroke:#0f172a,color:#ffffff,stroke-width:2px
 
     class A input
-    class B,D,I,P code
+    class B,D,I,P,N code
     class R,C1 deepseek
     class G,K,C2 model
     class T,S decision
@@ -85,9 +87,12 @@ flowchart TB
 | 工具调用 | 工具名与参数：`Result.calls` | 展示调用过程与查询条件 |
 | 代码计算 | `value`、`unit`、`method`、`evidence[]` | 展示数值、计算方法及来源对象 |
 | 资料归纳 | 答案、解释、引用的证据 | 展示引用的构件或表格行 |
-| 视觉回答 | 模型估计与页面说明；`deterministic=False` | 标记为待核对，提示人工检查 |
+| CubiCasa 计数 | 清单长度、住宅范围、逐项位置；`deterministic=False` | 核对漏数、重复与邻居残图 |
+| 其他视觉回答 | 模型估计与页面说明；`deterministic=False` | 标记为待核对，提示人工检查 |
 
-证据可包含 IFC `GlobalId`、DXF 实体句柄、PDF 文本或表格位置。界面可利用已有坐标与对象映射高亮证据；当前整图视觉回答只提供页面级说明。
+证据可包含 IFC `GlobalId`、DXF 实体句柄、PDF 文本或表格位置。界面可利用已有坐标与对象映射高亮证据；CubiCasa 计数提供房间与相对位置文字，不提供精确对象框。
+
+CubiCasa 中以 `How many` / `Kuinka monta` 开头的计数题会先辨认住宅范围，排除邻居残图，并保留同一住宅的多个楼层。模型每列出一个对象，代码计数一次；评测文件保留完整清单。对象识别仍由模型完成，因此不标记为确定性答案。截断或无效清单记为失败，并保留调用费用。其他问法继续使用通用视觉提示词。
 
 ## 模型配置与评测
 

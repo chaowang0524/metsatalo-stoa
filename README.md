@@ -67,6 +67,15 @@ uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
 Vision calls use `reasoning_effort="low"`, a 4096-token budget and a 1600-pixel
 image cap. `GEMINI_MODEL` overrides the Gemini model id.
 
+CubiCasa count questions beginning with "How many" or "Kuinka monta" use a
+dedicated scope-and-inventory prompt. The model identifies the dwelling and its
+floors, excludes incidental neighboring fragments, and lists each requested
+object with its location. Code computes the count from the list length. This is
+still a vision estimate (`deterministic=False`); `note` records the scope and
+`evidence` contains the object list. Evaluation keeps the complete list.
+Truncated or invalid inventories are recorded as failures with their billed
+usage retained. Other questions keep the general vision prompt.
+
 Every LLM call, including Gemini (`provider="google"`), goes through
 `stoa.verda.chat` and is logged with tokens, latency and `cost_usd` to
 `logs/verda_calls.jsonl`. Gemini costs use the paid-tier prices checked on
