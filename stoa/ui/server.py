@@ -20,6 +20,7 @@ from stoa.ui.facts import DATA, OUT
 
 STATIC = Path(__file__).parent / "static"
 EDITS = Path("out/edits")
+OUT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Stoa plan review")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -47,14 +48,14 @@ def index():
 @app.get("/api/drawings")
 def drawings():
     p = OUT / "index.json"
-    return json.loads(p.read_text()) if p.exists() else []
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 
 @app.get("/api/drawings/{source}/{stem}")
 def drawing(source: str, stem: str):
-    doc = json.loads(_doc_path(source, stem).read_text())
+    doc = json.loads(_doc_path(source, stem).read_text(encoding="utf-8"))
     e = _edits_path(source, stem)
-    doc["edits"] = json.loads(e.read_text()) if e.exists() else {"added": [], "rejected": []}
+    doc["edits"] = json.loads(e.read_text(encoding="utf-8")) if e.exists() else {"added": [], "rejected": []}
     return doc
 
 
@@ -67,7 +68,7 @@ class Edits(BaseModel):
 def save_edits(source: str, stem: str, edits: Edits):
     p = _edits_path(source, stem)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(edits.model_dump(), ensure_ascii=False))
+    p.write_text(json.dumps(edits.model_dump(), ensure_ascii=False), encoding="utf-8")
     return {"ok": True}
 
 
@@ -88,7 +89,7 @@ def _to_view(bbox, frame):
 @app.post("/api/ask")
 async def ask(q: Ask):
     source, stem = q.id.split("/", 1)
-    doc = json.loads(_doc_path(source, stem).read_text())
+    doc = json.loads(_doc_path(source, stem).read_text(encoding="utf-8"))
     path = DATA / source / doc["file"]
     res = await run_in_threadpool(pipeline.answer, path, q.question, {"ui": True}, q.router)
     out = res.to_json()

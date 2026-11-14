@@ -156,7 +156,7 @@ def swiss_facts(dxf_path: Path) -> dict:
     stem = dxf_path.stem
     svg_path = OUT / "swiss_dwellings" / f"{stem}.svg"
     svg_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_path.write_text(dxf_to_svg(msp, frame))
+    svg_path.write_text(dxf_to_svg(msp, frame), encoding="utf-8")
 
     def ent(e, label):
         return {"ref": e.dxf.handle, "label": label, "shape": {"bbox": frame.bbox(dxf_tools._bounds(e))},
@@ -368,7 +368,7 @@ def cubicasa_facts(png: Path) -> dict | None:
     cached = CUBICASA_CACHE / f"{png.stem}.json"
     if not cached.exists():
         return None
-    det = json.loads(cached.read_text())
+    det = json.loads(cached.read_text(encoding="utf-8"))
     w, h = Image.open(png).size
     facts = []
     for cls, (fid, label) in ICON_LABELS.items():
@@ -395,6 +395,7 @@ def cubicasa_facts(png: Path) -> dict | None:
 
 
 def build(source: str | None = None, limit: int | None = None) -> list[dict]:
+    OUT.mkdir(parents=True, exist_ok=True)
     jobs = []
     if source in (None, "ifc_models"):
         jobs += [("ifc_models", p) for p in sorted((DATA / "ifc_models").glob("*.svg"))[:limit]]
@@ -413,15 +414,15 @@ def build(source: str | None = None, limit: int | None = None) -> list[dict]:
             continue
         out = OUT / src / f"{p.stem}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(doc, ensure_ascii=False))
+        out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         summary = {f["id"]: f["value"] for f in doc["facts"] if f["group"] == "Components"}
         index.append({"id": doc["id"], "source": src, "file": doc["file"], "summary": summary})
     # Merge with drawings built in earlier runs of other sources.
     idx_path = OUT / "index.json"
-    old = json.loads(idx_path.read_text()) if idx_path.exists() else []
+    old = json.loads(idx_path.read_text(encoding="utf-8")) if idx_path.exists() else []
     ids = {d["id"] for d in index}
     index = [d for d in old if d["id"] not in ids] + index
-    idx_path.write_text(json.dumps(sorted(index, key=lambda d: d["id"]), ensure_ascii=False))
+    idx_path.write_text(json.dumps(sorted(index, key=lambda d: d["id"]), ensure_ascii=False), encoding="utf-8")
     return index
 
 
