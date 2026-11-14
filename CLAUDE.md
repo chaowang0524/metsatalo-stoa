@@ -10,7 +10,7 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 
 ## Environment
 
-- Python 3.13 venv in `.venv`, managed with `uv` (`uv pip install <pkg>`, `uv run python <script>`). No `pyproject.toml` or tests exist yet. Includes torch (MPS on the Mac) for the CubiCasa5K model.
+- Python 3.13 venv in `.venv`, managed with `uv` (`uv sync`, `uv add <pkg>`, `uv run python <script>`). Main pipeline dependencies are declared in `pyproject.toml` and locked in `uv.lock`; no tests exist yet. The experimental CubiCasa5K model needs separate source, weights and PyTorch/computer-vision dependencies.
 - `PIPELINE.md` describes the current answering pipeline and benchmark results. `VERDA_LOG.md` records each endpoint decision and finding with a date. Add a line there when you learn something about an endpoint.
 - Credentials: `secreat.toml` and `.env` (gitignored, holds `NEMOTRON_API_KEY`, loaded by `stoa/verda.py`). `VERDA_KIMI` is exported in `~/.zshrc`, so run `source ~/.zshrc` before Kimi calls from a non-interactive shell. Never print or commit any of these.
 

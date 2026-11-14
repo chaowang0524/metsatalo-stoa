@@ -4,13 +4,35 @@ Current pipeline (flowchart): `PIPELINE.md`. Verda rules: `VERDA_ENDPOINT_GUIDEL
 
 ## Run
 
+Install the main pipeline dependencies into `.venv` with `uv sync` (Python 3.13).
+Copy `.env.example` to `.env` and fill in the Verda URL and API keys. The default
+`hybrid` profile needs both `VERDA_INFERENCE_API_KEY` (DeepSeek) and `VERDA_KIMI`.
+If only the DeepSeek key is available, set `STOA_ROUTER=deepseek` in `.env`.
+The application reads `.env` automatically; keep real keys out of version control.
+
+Windows PowerShell, from the repository root:
+
+```powershell
+uv sync
+Copy-Item .env.example .env  # first setup only; preserve an existing .env
+# Fill in .env, then ask about a drawing in the local data directory:
+uv run python -m stoa.ask data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
+```
+
+Evaluation additionally requires `junction-dataset-preview/questions.jsonl` and
+its referenced drawings under `junction-dataset-preview/data/`. The local
+`data/` directory alone is enough for individual drawing questions, but not for
+the evaluation command below.
+
 ```bash
-export VERDA_INFERENCE_BASE_URL=... VERDA_INFERENCE_API_KEY=...
-uv run python -m stoa.ask junction-dataset-preview/data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
 uv run python -m stoa.eval --per-source 30 --workers 8      # writes out/eval_*.jsonl
 ```
 
 Every Verda call is logged to `logs/verda_calls.jsonl`.
+
+The experimental CubiCasa model is not part of the main dependency setup. It
+also needs the third-party `CubiCasa5k` source repository, pretrained weights,
+and its PyTorch/computer-vision dependencies before it can run.
 
 ## Layout
 

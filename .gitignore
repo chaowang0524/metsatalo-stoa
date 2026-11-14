@@ -9,6 +9,7 @@ junction-dataset-preview/
 junction-dataset-preview.zip
 logs/
 out/
+data/
 
 # Third-party clone (github.com/CubiCasa/CubiCasa5k), with its weights
 CubiCasa5k/
