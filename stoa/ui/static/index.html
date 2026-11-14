@@ -9,6 +9,11 @@
 <body>
 <header class="bar">
   <div class="brand">Stoa <span>Plan Check</span></div>
+  <div id="search" role="combobox" aria-expanded="false" aria-haspopup="listbox">
+    <input id="search-input" type="search" placeholder="Search drawings  ( / )" autocomplete="off" spellcheck="false"
+      aria-label="Search drawings by file name" aria-controls="search-results">
+    <ul id="search-results" role="listbox" hidden></ul>
+  </div>
   <select id="picker" aria-label="Drawing"></select>
   <div class="actions">
     <button id="btn-render" class="tool" title="AI 3D render of the edited plan">◈ 3D</button>
@@ -27,6 +32,8 @@
       <div id="palette-kinds"></div>
       <button id="btn-undo" class="small" title="Undo (⌘Z)" hidden>↶ Undo</button>
     </div>
+    <button id="nav-prev" class="nav prev" aria-label="Previous drawing" title="Previous drawing (←)">‹</button>
+    <button id="nav-next" class="nav next" aria-label="Next drawing" title="Next drawing (→)">›</button>
     <div class="zoom">
       <button id="z-in" aria-label="Zoom in">+</button>
       <button id="z-out" aria-label="Zoom out">−</button>

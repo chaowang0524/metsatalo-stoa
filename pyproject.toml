@@ -6,10 +6,14 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "ezdxf",
+    "fastapi>=0.162.7",
+    "google-genai>=3.3.0",
     "ifcopenshell",
     "openai",
+    "pillow>=13.0.0",
     "pymupdf",
     "shapely",
+    "uvicorn>=0.54.0",
 ]
 
 [tool.uv]

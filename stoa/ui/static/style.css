@@ -28,6 +28,16 @@ button.small { min-height: 30px; padding: 3px 10px; }
 .brand { font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
 .brand span { font-weight: 400; opacity: .7; }
 #picker { flex: 1; min-width: 0; max-width: 520px; font: inherit; padding: 6px 8px; border-radius: 8px; border: 0; }
+#search { position: relative; flex: 0 1 260px; min-width: 140px; }
+#search-input { width: 100%; font: inherit; padding: 6px 10px; border-radius: 8px; border: 0; min-height: 32px; }
+#search-results { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; width: max(100%, 340px);
+  max-height: 60vh; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+#search-results li { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+#search-results li[aria-selected="true"] { background: var(--hover); }
+#search-results li mark { background: none; color: var(--accent); font-weight: 700; }
+#search-results li .src { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+#search-results li.none { color: var(--muted); cursor: default; }
 .actions { display: flex; gap: 8px; margin-left: auto; }
 .tool { background: transparent; color: #fff; border-color: #555; }
 .tool:hover { border-color: #fff; }
@@ -41,6 +51,12 @@ main { flex: 1; display: flex; min-height: 0; }
 #plan.dragging { cursor: grabbing; }
 #credit { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted);
   background: rgba(255,255,255,.8); padding: 2px 6px; border-radius: 4px; max-width: 70%; }
+.nav { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 64px; padding: 0;
+  font-size: 30px; line-height: 1; border-radius: 10px; background: rgba(255,255,255,.88);
+  box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 2; }
+.nav.prev { left: 12px; }
+.nav.next { right: 12px; }
+.nav:disabled { visibility: hidden; }
 .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
 .zoom button { width: 40px; height: 40px; padding: 0; font-size: 18px; }
 
@@ -136,6 +152,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   #stage { flex: none; height: 55vh; }
   #panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); flex: 1; }
   .bar { flex-wrap: wrap; padding: 8px 12px; }
-  #picker { order: 3; flex-basis: 100%; max-width: none; }
+  #search { order: 3; flex: 1 1 40%; }
+  #picker { order: 4; flex: 1 1 40%; max-width: none; }
   .tool { padding: 6px 10px; }
 }
