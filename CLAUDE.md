@@ -16,8 +16,9 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 
 ## Web UI (`stoa/ui/`)
 
-- `uv run python -m stoa.ui.facts` pre-computes the facts for every swiss_dwellings and cubicasa5k drawing (no LLM) into `out/facts/`. It also draws a piping plan per storey for IFC models that have pipes (the clinic model takes ~2 min to tessellate). Swiss plans are rendered from the DXF to SVG, so highlights use exact CAD geometry. CubiCasa plans use the cached detector boxes.
+- `uv run python -m stoa.ui.facts` pre-computes the facts for every swiss_dwellings and cubicasa5k drawing (no LLM) into `out/facts/`. It also draws a piping plan per storey for IFC models that have pipes (the clinic model takes ~2 min to tessellate). Swiss plans are rendered from the DXF to SVG, so highlights use exact CAD geometry. CubiCasa plans use the cached boxes in `out/cubicasa_cache/`, which now hold Gemini full-plan detections (`stoa.cubicasa_gemini`); the CNN is out of the main flow.
 - `uv run uvicorn stoa.ui.server:app --port 8000` starts the server (Kimi still needs `source ~/.zshrc` first for `VERDA_KIMI`). The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini `gemini-nano-banana-2.1` (`endpoints/gemini.py` `IMAGE_MODEL`, same `GEMINI_API_KEY` from `.env`).
+- "Upload" in the top bar (or drag and drop) takes one or many drawings (`stoa/ui/uploads.py`). Uploads have no dataset path, so the kind is decided from the files: DXF (+ its PDF) → exact CAD facts; plan SVG + IFC → BIM facts; PNG/JPG or a scanned PDF → one Gemini full-plan detection call (~$0.10–0.18, ~1 min, background) and Ask treats it as a CubiCasa-style floor plan via `pipeline.answer(..., floor_plan=True)`; other PDFs → page 1 as the background, Ask only. Files go to `out/uploads/<batch>_<name>`, facts to `out/facts/uploads/`. Needs `python-multipart`.
 
 ## Verda endpoints
 

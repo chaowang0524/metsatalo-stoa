@@ -16,7 +16,8 @@ highlights straight over the background without knowing the source format:
 - ifc_models: the plan SVGs were rendered from the IFC and tag every element
   with its GlobalId (data-guid), so shapes come from the SVG and names, areas
   and storeys from the IFC. No projection needed.
-- cubicasa5k: icon and room boxes from the CubiCasa5K model cache, in PNG pixels.
+- cubicasa5k: icon and room boxes from the full-plan Gemini detection cache
+  (stoa.cubicasa_gemini, CubiCasa5K label set), in PNG pixels.
 
     uv run python -m stoa.ui.facts            # every supported drawing
     uv run python -m stoa.ui.facts --source cubicasa5k --limit 20
@@ -48,7 +49,7 @@ CREDITS = {
     "ifc_models": "IFC models: see junction-dataset-preview/data/ifc_models/LICENSE.md for each model's credit",
     "swiss_dwellings": "Swiss Dwellings v3.0.0, Archilyse AG, CC BY 4.0 (doi:10.5281/zenodo.7788422)",
 }
-CUBICASA_METHOD = "CubiCasa5K detector (Kalervo et al. 2019), model output — please verify"
+CUBICASA_METHOD = "Gemini full-plan detection (one call per plan, CubiCasa5K classes), model output — please verify"
 
 
 # ---- DXF -> SVG ----------------------------------------------------------------
@@ -149,12 +150,13 @@ def _fact(fid, group, label, items, unit="count", value=None, method="", determi
     }
 
 
-def swiss_facts(dxf_path: Path) -> dict:
+def swiss_facts(dxf_path: Path, svg_path: Path | None = None) -> dict:
+    """`svg_path` (under OUT) is where the rendered plan goes; default next to the facts."""
     msp = ezdxf.readfile(dxf_path).modelspace()
     frame = Frame(msp)
     plan = dxf_tools.load_plan(str(dxf_path))
     stem = dxf_path.stem
-    svg_path = OUT / "swiss_dwellings" / f"{stem}.svg"
+    svg_path = svg_path or OUT / "swiss_dwellings" / f"{stem}.svg"
     svg_path.parent.mkdir(parents=True, exist_ok=True)
     svg_path.write_text(dxf_to_svg(msp, frame), encoding="utf-8")
 
@@ -226,7 +228,7 @@ def swiss_facts(dxf_path: Path) -> dict:
         "id": f"swiss_dwellings/{stem}", "source": "swiss_dwellings", "file": f"{stem}.pdf",
         "credit": CREDITS["swiss_dwellings"],
         "view": {"width": frame.width, "height": frame.height,
-                 "background": f"/facts/swiss_dwellings/{stem}.svg", "units_per_m": SCALE,
+                 "background": f"/facts/{svg_path.relative_to(OUT).as_posix()}", "units_per_m": SCALE,
                  # DXF metres -> view: x' = (x - x0) * scale, y' = (y1 - y) * scale
                  "dxf_frame": [frame.x0, frame.y1, SCALE]},
         "facts": facts,

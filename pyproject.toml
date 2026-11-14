@@ -12,6 +12,7 @@ dependencies = [
     "openai",
     "pillow>=13.0.0",
     "pymupdf",
+    "python-multipart>=0.0.33",
     "shapely",
     "uvicorn>=0.54.0",
 ]

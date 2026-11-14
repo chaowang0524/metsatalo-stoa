@@ -404,7 +404,7 @@ def _has_tables(info: FileInfo) -> bool:
 
 def _vision_endpoint(info: FileInfo, prof: Profile) -> str:
     if info.kind == "raster":
-        if prof.cubicasa_vision and any(part.casefold() == "cubicasa5k" for part in info.path.parts):
+        if prof.cubicasa_vision and info.floor_plan:
             return prof.cubicasa_vision
         if prof.raster_vision:
             return prof.raster_vision
@@ -414,7 +414,8 @@ def _vision_endpoint(info: FileInfo, prof: Profile) -> str:
 def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> Answer:
     if tool.name == "ask_vision_model":
         return tool.fn(_source_path(tool, info), args.get("question", ""), context=ctx,
-                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
+                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort,
+                       floor_plan=info.floor_plan)
     return tool.fn(_source_path(tool, info), **args)
 
 
@@ -487,10 +488,15 @@ def _reconcile_count(value, unit, cited: list, ids, calls: list) -> tuple:
     return n, f"Corrected from {value}: the answer cites {n} items. "
 
 
-def answer(path: str | Path, question: str, context: dict | None = None, router: str | None = None) -> Result:
+def answer(path: str | Path, question: str, context: dict | None = None, router: str | None = None,
+           floor_plan: bool | None = None) -> Result:
+    """`floor_plan` says the file is a raster floor plan (CubiCasa-style) when its
+    path doesn't, e.g. an upload; None reads it from the dataset layout."""
     router = router or ROUTER
     prof = PROFILES[router]
     info = inspect_file(path)
+    if floor_plan is not None and info.kind == "raster":
+        info.floor_plan = floor_plan
     tools = tools_for(info)
     res = Result(question=question, path=str(path), answer=None, router=router)
     ctx = {"file": Path(path).name, **(context or {})}
@@ -501,7 +507,8 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
         res.calls.append({"tool": "ask_vision_model", "args": {"question": question}})
         try:
             res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
-                                                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort)
+                                                       endpoint=_vision_endpoint(info, prof), effort=prof.vision_effort,
+                                                       floor_plan=info.floor_plan)
         except vision_tools.VisionResponseError as exc:
             res.add_usage(exc.usage)
             res.error = str(exc)

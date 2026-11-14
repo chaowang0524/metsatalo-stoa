@@ -83,23 +83,80 @@ const factById = (id) => id === "__answer" ? state.adhoc : state.doc.facts.find(
 
 // ---------- loading ----------
 let drawings = []; // index entries in picker order
-async function loadIndex() {
+const STATUS = { processing: "⏳ analysing…", failed: "⚠ facts failed" };
+function optionText(d) {
+  const s = d.summary || {};
+  const tag = STATUS[d.status] || [s.window != null && `${s.window} win`, s.door != null && `${s.door} doors`].filter(Boolean).join(", ");
+  return tag ? `${d.file}  ·  ${tag}` : d.file;
+}
+async function loadIndex(want) {
   const list = await (await fetch("/api/drawings")).json();
   const picker = $("#picker");
+  picker.replaceChildren();
   const groups = {};
   for (const d of list) {
-    const g = groups[d.source] || (groups[d.source] = h("optgroup", { label: d.source }));
-    const s = d.summary;
-    const tag = [s.window != null && `${s.window} win`, s.door != null && `${s.door} doors`].filter(Boolean).join(", ");
-    g.append(h("option", { value: d.id, textContent: `${d.file}  ·  ${tag}` }));
+    const g = groups[d.source] || (groups[d.source] = h("optgroup", { label: d.source === "uploads" ? "uploaded" : d.source }));
+    g.append(h("option", { value: d.id, textContent: optionText(d) }));
   }
-  for (const src of ["ifc_models", "swiss_dwellings", "cubicasa5k"]) if (groups[src]) picker.append(groups[src]);
+  for (const src of ["uploads", "ifc_models", "swiss_dwellings", "cubicasa5k"]) if (groups[src]) picker.append(groups[src]);
   for (const g of Object.values(groups)) if (!g.parentNode) picker.append(g);
   const byId = Object.fromEntries(list.map((d) => [d.id, d]));
   drawings = [...picker.options].map((o) => byId[o.value]); // picker order = arrow order
-  if (!list.length) { toast("No facts yet: run  uv run python -m stoa.ui.facts", 10000); return; }
-  const want = decodeURIComponent(location.hash.slice(1));
+  if (!list.length) { toast("No facts yet: run  uv run python -m stoa.ui.facts, or upload a drawing", 10000); return; }
+  want ||= decodeURIComponent(location.hash.slice(1));
   await loadDoc(byId[want] ? want : drawings[0].id);
+  watchUploads();
+}
+
+// ---------- uploads: one or many drawings, facts computed on the server ----------
+let uploadTimer = null;
+function watchUploads() {
+  clearTimeout(uploadTimer);
+  if (!drawings.some((d) => d.status === "processing")) return;
+  uploadTimer = setTimeout(async () => {
+    try {
+      const fresh = Object.fromEntries((await (await fetch("/api/drawings")).json()).map((d) => [d.id, d]));
+      for (const d of drawings) {
+        const n = fresh[d.id];
+        if (!n || n.status === d.status) continue;
+        Object.assign(d, n);
+        const opt = [...$("#picker").options].find((o) => o.value === d.id);
+        if (opt) opt.textContent = optionText(d);
+        if (state.doc?.id === d.id) loadDoc(d.id);
+        else toast(`${d.file}: ${d.status === "done" ? "facts ready" : "facts failed"}`);
+      }
+    } catch { /* try again on the next tick */ }
+    watchUploads();
+  }, 3000);
+}
+async function uploadFiles(list) {
+  const files = [...list];
+  if (!files.length) return;
+  toast(`Uploading ${files.length} file${files.length > 1 ? "s" : ""}…`, 120000);
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  try {
+    const r = await fetch("/api/uploads", { method: "POST", body: form });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    const res = await r.json();
+    const skip = res.skipped.length ? ` · skipped ${res.skipped.join(", ")}` : "";
+    if (!res.drawings.length) { toast(`Nothing to analyse${skip}`, 6000); return; }
+    toast(`${res.drawings.length} drawing${res.drawings.length > 1 ? "s" : ""} uploaded, analysing${skip}`, 5000);
+    await loadIndex(res.drawings[0]);
+  } catch (err) {
+    toast(`Upload failed: ${err.message}`, 8000);
+  }
+}
+$("#btn-upload").onclick = () => $("#upload-input").click();
+$("#upload-input").onchange = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
+{
+  let depth = 0; // dragenter/leave fire for every child element crossed
+  const files = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  const show = (on) => { $("#drop").hidden = !on; if (!on) depth = 0; };
+  addEventListener("dragenter", (e) => { if (files(e)) { e.preventDefault(); depth++; show(true); } });
+  addEventListener("dragover", (e) => { if (files(e)) e.preventDefault(); });
+  addEventListener("dragleave", (e) => { if (files(e) && --depth <= 0) show(false); });
+  addEventListener("drop", (e) => { if (!files(e)) return; e.preventDefault(); show(false); uploadFiles(e.dataTransfer.files); });
 }
 
 async function loadDoc(id) {
@@ -120,13 +177,15 @@ async function loadDoc(id) {
   bg.setAttribute("width", v.width); bg.setAttribute("height", v.height);
   $("#credit").textContent = doc.credit;
   $("#doc-title").textContent = doc.file;
-  const det = doc.facts.every((f) => f.deterministic);
+  const any = doc.facts.length > 0;
+  const det = any && doc.facts.every((f) => f.deterministic);
   const basis = doc.source === "ifc_models" ? (doc.ifc ? "exact · from BIM model" : "exact · from plan SVG") : "exact · from CAD geometry";
+  const cost = doc.cost_usd ? ` · $${doc.cost_usd.toFixed(2)}` : "";
   $("#doc-meta").replaceChildren(
-    h("span", { className: `badge ${det ? "det" : "model"}`, textContent: det ? basis : "detector · verify on plan" }),
+    any ? h("span", { className: `badge ${det ? "det" : "model"}`, textContent: det ? basis : "model detection · verify on plan" }) : "",
     doc.storey ? h("span", { textContent: `storey ${doc.storey}` }) : "",
-    h("span", { className: "badge free", textContent: "pre-computed · 0 LLM tokens" }),
-    h("span", { textContent: doc.source }),
+    any ? h("span", { className: "badge free", textContent: det ? "pre-computed · 0 LLM tokens" : `pre-computed · 1 Gemini call per plan${cost}` }) : "",
+    h("span", { textContent: doc.uploaded ? "uploaded" : doc.source }),
   );
   $("#thread").replaceChildren();
   closeMenu(); resetRender();
@@ -140,6 +199,7 @@ function renderFacts() {
   const box = $("#facts");
   const scroll = box.scrollTop;
   box.replaceChildren();
+  if (!state.doc.facts.length) box.append(emptyNote(state.doc));
   const groups = {};
   for (const f of state.doc.facts) (groups[f.group] ||= []).push(f);
   for (const [name, facts] of Object.entries(groups)) {
@@ -155,6 +215,20 @@ function renderFacts() {
     btn.textContent = active ? "Hide references" : `Highlight references (${btn.dataset.referenceCount})`;
   }
   if (costOpen()) renderCost();
+}
+
+function emptyNote(doc) {
+  if (doc.status === "processing") {
+    return h("div", { className: "empty" }, h("span", { className: "spinner" }), doc.kind === "raster" || doc.kind === "pdf"
+      ? " Finding windows, doors, fixtures and rooms (one Gemini call, about a minute)…" : " Computing facts…");
+  }
+  if (doc.status === "failed") {
+    return h("div", { className: "empty" }, "Could not pre-compute facts. You can still ask questions below.",
+      h("div", { className: "err", textContent: doc.error || "" }));
+  }
+  return h("div", { className: "empty", textContent: doc.kind === "ifc"
+    ? "IFC model without a plan drawing: ask a question below."
+    : "No pre-computed facts for this sheet. Ask a question below." });
 }
 
 function factRow(f) {
