@@ -19,10 +19,6 @@
     <button id="btn-upload" class="tool" title="Upload floor plans (one or many): PNG/JPG, PDF, DXF, IFC + plan SVG">⤒ Upload</button>
     <input id="upload-input" type="file" multiple hidden
       accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.dxf,.svg,.ifc">
-    <div id="cost">
-      <button id="btn-cost" class="tool" title="Installed cost of the components on this plan" aria-expanded="false" aria-controls="cost-pop">€ Cost ▾</button>
-      <div id="cost-pop" role="dialog" aria-label="Cost estimate" hidden></div>
-    </div>
     <button id="btn-export" class="tool" title="Save the edited plan as PNG, JPEG or PDF" aria-haspopup="menu">⤓ Export</button>
     <button id="btn-render" class="tool" title="AI 3D render of the edited plan">◈ 3D</button>
   </div>
@@ -59,7 +55,12 @@
       <h1 id="doc-title"></h1>
       <div id="doc-meta"></div>
     </div>
-    <div id="facts"></div>
+    <div id="tabs" role="tablist" aria-label="Side panel">
+      <button id="tab-facts" role="tab" aria-selected="true" aria-controls="facts">Facts</button>
+      <button id="tab-cost" role="tab" aria-selected="false" aria-controls="cost-pane" title="Installed cost of the components on this plan">€ Cost</button>
+    </div>
+    <div id="facts" role="tabpanel" aria-labelledby="tab-facts"></div>
+    <div id="cost-pane" role="tabpanel" aria-labelledby="tab-cost"></div>
 
     <div id="ask">
       <div id="thread"></div>
@@ -85,6 +86,24 @@
   </div>
   <div id="render-out"><p class="muted">Renders the plan as you edited it. AI illustration only: use the plan for counts and measurements.</p></div>
   <div class="dlg-foot"><button id="btn-share-3d" disabled aria-haspopup="menu">↗ Share render</button></div>
+</dialog>
+
+<dialog id="submit-dlg">
+  <form method="dialog" class="dlg-head">
+    <strong>Submit cost estimate</strong>
+    <button aria-label="Close">✕</button>
+  </form>
+  <form id="submit-form" class="submit-body">
+    <fieldset class="to">
+      <legend>Send to</legend>
+      <label><input type="radio" name="to" value="approval" checked> Internal approval <small>site manager / cost control</small></label>
+      <label><input type="radio" name="to" value="client"> Client <small>as an offer</small></label>
+    </fieldset>
+    <label>Prepared by <input name="by" required autocomplete="name" placeholder="Your name"></label>
+    <label>Note for the reviewer <textarea name="note" rows="3" placeholder="e.g. 2 windows added on site, bathtub price from supplier quote"></textarea></label>
+    <div id="submit-checks"></div>
+    <div class="dlg-foot"><button type="submit" class="primary">Submit</button></div>
+  </form>
 </dialog>
 
 <div id="drop" hidden><div>Drop drawings to upload<small>PNG / JPG plans, PDF, DXF (+ its PDF), IFC + plan SVG</small></div></div>

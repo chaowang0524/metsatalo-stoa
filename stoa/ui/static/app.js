@@ -171,6 +171,7 @@ async function loadDoc(id) {
   const doc = await (await fetch(`/api/drawings/${id}`)).json();
   if (token !== loadDoc.n) return; // a later arrow press or search pick won
   state.doc = doc; state.edits = doc.edits; state.history = [];
+  state.cost = doc.cost; state.quotes = doc.quotes;
   state.pinned = state.hover = state.single = state.adhoc = state.addKind = state.sel = null;
   state.edits.added.forEach(normalise);
   addedFacts();
@@ -220,7 +221,7 @@ function renderFacts() {
     btn.setAttribute("aria-pressed", String(active));
     btn.textContent = active ? "Hide references" : `Highlight references (${btn.dataset.referenceCount})`;
   }
-  if (costOpen()) renderCost();
+  if (costOpen()) renderCost(); else if (prices) costPill();
 }
 
 function emptyNote(doc) {
@@ -456,7 +457,7 @@ window.addEventListener("resize", () => state.doc && fit());
 // ---------- splitter between the plan and the side panel ----------
 // The plan keeps its scale and centre while the panel is resized; the width is remembered per browser.
 const PANEL_W = 380, panel = $("#panel"), splitter = $("#splitter");
-function setPanelWidth(w) {
+function setPanelWidth(w, save = true) {
   const max = Math.max(260, window.innerWidth - 320);
   w = Math.round(Math.min(Math.max(w, 260), max));
   const k = unitsPerPx(), v = state.view, cx = v.x + v.w / 2, cy = v.y + v.h / 2;
@@ -466,7 +467,7 @@ function setPanelWidth(w) {
     const nw = svg.clientWidth * k, nh = svg.clientHeight * k;
     setView({ x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh });
   }
-  try { localStorage.setItem("stoa.panelWidth", w); } catch {}
+  if (save) { widened = null; try { localStorage.setItem("stoa.panelWidth", w); } catch {} }
 }
 try { const w = +localStorage.getItem("stoa.panelWidth"); if (w) panel.style.width = `${w}px`; } catch {}
 splitter.addEventListener("pointerdown", (e) => {
@@ -1147,84 +1148,294 @@ $("#btn-share-3d").onclick = (e) => {
   popMenu(r.left, r.bottom + 4, [["Copy to clipboard", copyRender]], $("#render-dlg"));
 };
 
-// ---------- cost estimate: plan quantities (with the engineer's edits) × Finnish unit prices ----------
+// ---------- cost estimate: plan quantities × unit prices, every number traceable and overridable ----------
+// Quantities come from the plan (with the engineer's edits); a typed quantity or price wins and is marked as such.
+// The estimate is handed on as a frozen quote: a link the approver or client opens, approves or sends back.
 let prices = null;
 const eur = (n) => `${Math.round(n).toLocaleString("fi-FI")} €`;
-const costOpen = () => !$("#cost-pop").hidden;
+const costOpen = () => panel.dataset.tab === "cost";
+let widened = null; // the panel width before the cost tab widened it
 
 function costLines() {
-  const lines = [], unpriced = [];
+  const ov = state.cost.lines, lines = [];
+  const src = (k) => prices.sources[k] || { label: k, verified: false };
+  const priceSrc = (key, p) => {
+    const o = ov[key] || {};
+    if (o.material != null || o.labour != null)
+      return { t: "price: engineer", cls: "edit", tip: `Unit price typed by the engineer${o.note ? `: ${o.note}` : ""}` };
+    if (!p) return { t: "no price", cls: "none", tip: "No unit price in the price list: type one" };
+    const s = src(p.src);
+    const tip = p.material_src
+      ? `Material ${eur(p.material)}: ${priceRefs(p.material_src).map((r) => r.note).join(" + ")}\nLabour ${eur(p.labour)}: ${priceRefs(p.labour_src).map((r) => r.note).join(" + ")}`
+      : `${s.label}. ${s.detail || ""}`;
+    return { t: s.verified ? "price: sourced" : "price: estimate", cls: s.verified ? "ok" : "warn", tip };
+  };
+  const qtySrc = (key, f, planQty) => {
+    const o = ov[key] || {};
+    if (o.qty != null) return { t: "qty: typed", cls: "edit", tip: `Typed by the engineer; the plan says ${planQty}` };
+    if (f.unit === "count" && planQty !== f.value) {
+      const n = planQty - f.value;
+      return { t: "qty: plan + edits", cls: "edit", tip: `${f.value} found on the plan, ${n > 0 ? "+" : ""}${n} by the engineer on the plan` };
+    }
+    return f.deterministic ? { t: "qty: exact", cls: "ok", tip: "Counted from the drawing's CAD/BIM data" }
+      : { t: "qty: detector", cls: "warn", tip: "Found by an image model: check on the plan (tap the row)" };
+  };
+  const line = (key, f, label, p, planQty, unit) => {
+    const o = ov[key] || {};
+    const qty = o.qty ?? planQty, mat = o.material ?? p?.material ?? 0, lab = o.labour ?? p?.labour ?? 0;
+    return { key, fact: f, label, spec: p?.label || "", unit, planQty, qty, mat, lab, p, typed: o, base: { qty: planQty, mat: p?.material, lab: p?.labour },
+      priced: !!p || o.material != null || o.labour != null, qtySrc: qtySrc(key, f, planQty), priceSrc: priceSrc(key, p),
+      material: qty * mat, labour: qty * lab };
+  };
   for (const f of components()) {
-    const qty = valueOf(f), p = prices.items[f.kind];
-    if (!qty) continue;
-    if (!p) { unpriced.push(`${f.label} ${qty}`); continue; }
-    lines.push({ fact: f, label: f.label, spec: p.label, qty, was: f.value, unit: "pcs",
-      material: qty * p.material, labour: qty * p.labour });
+    const planQty = valueOf(f);
+    if (!planQty && ov[f.kind]?.qty == null) continue;
+    lines.push(line(f.kind, f, f.label, prices.items[f.kind], planQty, "pcs"));
   }
   const area = state.doc.facts.find((f) => f.id === "area_total");
-  if (area?.value) {
-    const p = prices.floor, qty = area.value;
-    lines.push({ fact: area, label: "Floor finish", spec: `${p.label}, ${p.material + p.labour} €/${p.unit}`, qty, was: qty,
-      unit: p.unit, material: qty * p.material, labour: qty * p.labour });
+  if (area?.value) lines.push(line("floor", area, "Floor finish", prices.floor, Math.round(area.value * 10) / 10, prices.floor.unit));
+  for (const x of state.cost.extra) {
+    const s = { t: "added by engineer", cls: "edit", tip: x.note || "Line added by hand" };
+    lines.push({ key: x.id, extra: x, label: x.label, spec: x.note || "", unit: x.unit || "pcs", qty: x.qty, mat: x.material, lab: x.labour,
+      base: {}, priced: true, qtySrc: s, priceSrc: s, material: x.qty * x.material, labour: x.qty * x.labour });
   }
-  return { lines, unpriced };
+  return lines;
+}
+
+function costTotals(lines) {
+  const sum = (k) => lines.reduce((s, l) => s + l[k], 0);
+  const mat = sum("material"), lab = sum("labour"), net = mat + lab, vat = net * prices.vat;
+  return { material: mat, labour: lab, net, vat, total: net + vat };
+}
+
+// Warnings a reviewer must see: what in this estimate is not yet backed by data or by a check on the plan.
+function costWarnings(lines) {
+  const w = [];
+  const det = lines.filter((l) => l.qtySrc.cls === "warn").map((l) => l.label);
+  const est = lines.filter((l) => l.priceSrc.cls === "warn").map((l) => l.label);
+  const none = lines.filter((l) => !l.priced).map((l) => l.label);
+  if (det.length) w.push(`Quantities from the image detector, not CAD data: ${det.join(", ")}.`);
+  if (est.length) w.push(`Unit prices are unverified estimates: ${est.join(", ")}.`);
+  if (none.length) w.push(`No unit price, left out of the total: ${none.join(", ")}.`);
+  return w;
+}
+
+let costT;
+function saveCost() {
+  clearTimeout(costT);
+  costT = setTimeout(() => fetch(`/api/cost/${state.doc.id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state.cost),
+  }).catch(() => toast("Could not save cost edits")), 400);
+}
+
+// One number cell. Typing the original value back (or clearing it) drops the override.
+function numCell(l, field, base, value, cls = "") {
+  const inp = h("input", { className: `num ${cls}`, type: "number", min: 0, step: field === "qty" && l.unit === "pcs" ? 1 : "any",
+    value: +(+value).toFixed(2), title: base != null ? `From ${field === "qty" ? "the plan" : "the price list"}: ${base}` : "" });
+  inp.dataset.cell = `${l.key}:${field}`;
+  const over = l.extra ? false : field === "qty" ? state.cost.lines[l.key]?.qty != null
+    : state.cost.lines[l.key]?.[field === "mat" ? "material" : "labour"] != null;
+  inp.classList.toggle("over", over);
+  inp.onclick = (e) => e.stopPropagation();
+  inp.onchange = () => {
+    const v = inp.value === "" ? null : Math.max(0, +inp.value);
+    const name = { qty: "qty", mat: "material", lab: "labour" }[field];
+    if (l.extra) l.extra[name] = v ?? 0;
+    else {
+      const o = state.cost.lines[l.key] ||= {};
+      if (v == null || v === base) delete o[name]; else o[name] = v;
+      if (!Object.keys(o).filter((k) => k !== "note").length) delete state.cost.lines[l.key];
+    }
+    saveCost();
+    setTimeout(renderCost); // after focus has moved on, so Tab keeps working
+  };
+  const td = h("td");
+  if (over && base != null) td.append(h("span", { className: "was", textContent: base }));
+  td.append(inp);
+  return td;
+}
+
+function quoteStatus(lines) {
+  const q = state.quotes[0];
+  if (!q) return [h("span", { className: "st", textContent: "Draft" }), "not submitted yet"];
+  const stale = q.sig !== costSig(lines);
+  const label = { submitted: "Awaiting review", approved: "Approved", changes: "Changes requested" }[q.status] || q.status;
+  const when = new Date(q.created).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+  return [
+    h("span", { className: `st ${q.status}`, textContent: `v${q.version} · ${label}` }),
+    h("a", { href: `/quote/${q.id}`, target: "_blank", textContent: `to ${q.to === "client" ? "client" : "approval"} · ${when}` }),
+    q.decision?.comment ? h("span", { textContent: `“${q.decision.comment}”${q.decision.by ? ` · ${q.decision.by}` : ""}` }) : "",
+    stale ? h("span", { className: "st stale", textContent: "edited since: resubmit" }) : "",
+  ];
 }
 
 function renderCost() {
-  const pop = $("#cost-pop");
-  if (!prices) { pop.replaceChildren(h("p", { className: "muted", textContent: "Loading prices…" })); return; }
-  const { lines, unpriced } = costLines();
-  const sum = (k) => lines.reduce((s, l) => s + l[k], 0);
-  const mat = sum("material"), lab = sum("labour"), net = mat + lab, vat = net * prices.vat;
+  const pane = $("#cost-pane");
+  if (!prices) { pane.replaceChildren(h("p", { className: "muted", textContent: "Loading prices…" })); return; }
+  const focus = document.activeElement?.dataset?.cell, scroll = pane.scrollTop;
+  const lines = costLines(), t = costTotals(lines);
   const body = h("tbody");
   for (const l of lines) {
-    const qty = h("td");
-    if (l.unit === "pcs" && l.qty !== l.was) qty.append(h("span", { className: "was", textContent: l.was }));
-    qty.append(l.unit === "pcs" ? `${l.qty}` : `${l.qty.toFixed(1)} ${l.unit}`);
-    const tr = h("tr", { title: "Show these on the plan" },
-      h("td", {}, h("div", { className: "what" }, h("span", { className: "swatch", style: `background:${color(l.fact.kind)}` }), l.label),
-        h("div", { className: "spec", textContent: l.spec })),
-      qty, h("td", { textContent: eur(l.material) }), h("td", { textContent: eur(l.labour) }),
-      h("td", {}, h("strong", { textContent: eur(l.material + l.labour) })));
-    tr.classList.toggle("hl", state.pinned === l.fact.id);
-    tr.onmouseenter = () => { state.hover = l.fact.id; drawHighlight(); };
-    tr.onmouseleave = () => { state.hover = null; drawHighlight(); };
-    tr.onclick = () => { state.pinned = state.pinned === l.fact.id ? null : l.fact.id; state.single = null; renderFacts(); };
+    const label = l.extra
+      ? h("input", { value: l.label, placeholder: "Item", onclick: (e) => e.stopPropagation(),
+          onchange: (e) => { l.extra.label = e.target.value; saveCost(); } })
+      : l.label;
+    const what = h("td", {},
+      h("div", { className: "what" }, h("span", { className: "swatch", style: `background:${l.fact ? color(l.fact.kind) : "#adb5bd"}` }), label),
+      l.spec ? h("div", { className: "spec", textContent: l.spec }) : "",
+      h("div", { className: "srcs" }, ...[l.qtySrc, ...(l.extra ? [] : [l.priceSrc])].map((s) => h("span", { className: `src ${s.cls}`, textContent: s.t, title: s.tip }))));
+    const undo = l.extra
+      ? h("button", { className: "x", textContent: "✕", title: "Remove this line",
+          onclick: (e) => { e.stopPropagation(); state.cost.extra = state.cost.extra.filter((x) => x !== l.extra); saveCost(); renderCost(); } })
+      : state.cost.lines[l.key] ? h("button", { className: "x", textContent: "↺", title: "Back to the plan quantity and list price",
+          onclick: (e) => { e.stopPropagation(); delete state.cost.lines[l.key]; saveCost(); renderCost(); } }) : "";
+    const qty = numCell(l, "qty", l.base.qty, l.qty, "qty");
+    if (l.unit !== "pcs") qty.append(h("span", { className: "u", textContent: l.unit }));
+    const tr = h("tr", { title: l.fact ? "Show these on the plan" : "" }, what, qty,
+      numCell(l, "mat", l.base.mat, l.mat), numCell(l, "lab", l.base.lab, l.lab),
+      h("td", {}, h("strong", { textContent: l.priced ? eur(l.material + l.labour) : "–" })), h("td", {}, undo));
+    if (l.fact) {
+      tr.classList.toggle("hl", state.pinned === l.fact.id);
+      tr.onmouseenter = () => { state.hover = l.fact.id; drawHighlight(); };
+      tr.onmouseleave = () => { state.hover = null; drawHighlight(); };
+      tr.onclick = () => { state.pinned = state.pinned === l.fact.id ? null : l.fact.id; state.single = null; renderFacts(); };
+    }
     body.append(tr);
   }
-  const foot = (label, val, cls = "") => h("tr", { className: cls }, h("td", { colSpan: 4, textContent: label }), h("td", { textContent: val }));
+  const foot = (label, val, cls = "") => h("tr", { className: cls }, h("td", { colSpan: 4, textContent: label }), h("td", { textContent: val }), h("td"));
   const edited = state.edits.added.length + state.edits.rejected.length;
-  pop.replaceChildren(
-    h("div", { className: "head" }, h("strong", { textContent: "Cost estimate" }),
-      h("span", { className: "muted", textContent: edited ? `includes your ${edited} edit${edited > 1 ? "s" : ""}` : "quantities from the plan" })),
-    lines.length ? h("table", {},
-      h("thead", {}, h("tr", {}, ...["Item", "Qty", "Material", "Labour", "Total"].map((t) => h("th", { textContent: t })))),
+  const typed = Object.keys(state.cost.lines).length + state.cost.extra.length;
+  const sources = h("details", { className: "sources" }, h("summary", { textContent: "Sources" }),
+    h("dl", {}, ...Object.values(prices.sources).flatMap((s) => [
+      h("dt", {}, s.url ? h("a", { href: s.url, target: "_blank", rel: "noopener", textContent: s.label }) : s.label,
+        s.verified ? "" : h("span", { className: "src warn", textContent: "unverified", style: "margin-left:6px" })),
+      h("dd", { textContent: `${s.detail || ""}${s.date ? ` (${s.date})` : ""}` })]),
+      h("dt", { textContent: "Quantities" }),
+      h("dd", { textContent: `From ${state.doc.file}: ${state.doc.facts.every((f) => f.deterministic) ? "counted from the CAD/BIM data" : "found by the image detector"}${edited ? `, with ${edited} change${edited > 1 ? "s" : ""} by the engineer on the plan` : ""}. Tap a row to see the items on the plan.` }),
+      h("dt", { textContent: "Unit prices on this plan" }),
+      h("dd", {}, h("ul", { className: "refs" }, ...lines.filter((l) => !l.extra).map((l) => h("li", {}, h("strong", { textContent: l.label }),
+        ...lineRefs(l).map((r) => h("div", {}, `${r.what}${r.value != null ? ` ${eur(r.value)}:` : ""} `, r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener", textContent: r.note }) : r.note)))))),
+      h("dt", { textContent: "Check prices against" }),
+      h("dd", {}, h("ul", {}, ...prices.check_against.map((c) => h("li", {}, h("a", { href: c.url, target: "_blank", rel: "noopener", textContent: c.label }))))),
+      h("dt", { textContent: "Scope" }), h("dd", { textContent: prices.basis })));
+  pane.replaceChildren(
+    h("div", { className: "status" }, ...quoteStatus(lines),
+      h("span", { textContent: [edited && `${edited} plan edit${edited > 1 ? "s" : ""}`, typed && `${typed} typed value${typed > 1 ? "s" : ""}`].filter(Boolean).join(" · ") })),
+    h("table", { className: "cost-table" },
+      h("thead", {}, h("tr", {}, ...["Item", "Qty", "Mat. €/u", "Lab. €/u", "Total", ""].map((x) => h("th", { textContent: x })))),
       body,
       h("tfoot", {},
-        foot("Material", eur(mat)), foot("Labour", eur(lab)), foot("Subtotal, excl. VAT", eur(net)),
-        foot(`VAT ${(prices.vat * 100).toFixed(1).replace(/\.0$/, "")} %`, eur(vat)),
-        foot("Total, incl. VAT", eur(net + vat), "total")))
-      : h("p", { className: "muted", textContent: "No priced components on this plan." }),
-    unpriced.length ? h("p", { className: "note", textContent: `Not priced: ${unpriced.join(", ")}.` }) : "",
-    !state.doc.facts.every((f) => f.deterministic)
-      ? h("p", { className: "note", textContent: "⚠ Quantities come from a detector: check them on the plan (tap a row) before quoting." }) : "",
-    h("p", { className: "note", textContent: prices.basis }),
+        foot("Material", eur(t.material)), foot("Labour", eur(t.labour)), foot("Subtotal, excl. VAT", eur(t.net)),
+        foot(`VAT ${(prices.vat * 100).toFixed(1).replace(/\.0$/, "")} %`, eur(t.vat)),
+        foot("Total, incl. VAT", eur(t.total), "total"))),
+    h("button", { className: "small add-line", textContent: "+ Add line", title: "e.g. demolition, waterproofing, transport",
+      onclick: () => { state.cost.extra.push({ id: `x${Date.now().toString(36)}`, label: "", unit: "pcs", qty: 1, material: 0, labour: 0 }); saveCost(); renderCost();
+        setTimeout(() => [...pane.querySelectorAll(".what input")].pop()?.focus()); } }),
+    ...costWarnings(lines).map((w) => h("p", { className: "note warn", textContent: `⚠ ${w}` })),
+    h("p", { className: "note", textContent: "Hover a row to see it on the plan. Click a number to change it; ↺ restores the plan and list values." }),
+    sources,
+    h("div", { className: "cost-actions" },
+      h("button", { textContent: "⤓ CSV", title: "Download the estimate as a spreadsheet", onclick: () => exportCostCSV(lines, t) }),
+      h("button", { className: "primary", textContent: state.quotes[0] ? "Resubmit…" : "Submit for approval…", onclick: openSubmit })),
   );
+  pane.scrollTop = scroll;
+  if (focus) pane.querySelector(`[data-cell="${CSS.escape(focus)}"]`)?.focus();
+  costPill(t);
+}
+const costPill = (t = costTotals(costLines())) => $("#tab-cost").replaceChildren("€ Cost", h("span", { className: "pill", textContent: eur(t.total) }));
+
+// Where a unit price comes from: one or more published prices, each with its link.
+function priceRefs(s) {
+  if (!s) return [];
+  if (s.parts) return s.parts.flatMap(priceRefs);
+  return [{ note: s.note, url: s.url }];
+}
+function lineRefs(l) {
+  const out = [];
+  for (const [what, field, val] of [["Material", "material", l.mat], ["Labour", "labour", l.lab]]) {
+    if (l.typed?.[field] != null) out.push({ what, value: val, note: `typed by the engineer${l.typed.note ? `: ${l.typed.note}` : ""}` });
+    else if (l.p?.[`${field}_src`]) for (const [i, r] of priceRefs(l.p[`${field}_src`]).entries()) out.push({ what: i ? "+" : what, value: i ? null : val, ...r });
+    else if (l.p) out.push({ what, value: val, note: "price list, no source given" });
+  }
+  return out;
 }
 
-function toggleCost(open = !costOpen()) {
-  $("#cost-pop").hidden = !open;
-  $("#btn-cost").setAttribute("aria-expanded", open);
-  if (!open) return;
-  renderCost();
-  if (!prices) fetch("/static/prices.json").then((r) => r.json()).then((p) => { prices = p; if (costOpen()) renderCost(); })
-    .catch(() => toast("Could not load prices"));
+// A fingerprint of what the estimate says, to tell whether it changed after it was submitted.
+const costSig = (lines) => JSON.stringify(lines.map((l) => [l.label, l.qty, l.mat, l.lab]));
+
+function quoteData(lines, t) {
+  return {
+    drawing: { id: state.doc.id, file: state.doc.file, source: state.doc.source, credit: state.doc.credit },
+    currency: prices.currency, vat: prices.vat, totals: t,
+    lines: lines.map((l) => ({ label: l.label, spec: l.spec, qty: l.qty, unit: l.unit, material_unit: l.mat, labour_unit: l.lab,
+      material: l.material, labour: l.labour, total: l.material + l.labour, priced: l.priced,
+      qty_source: l.qtySrc.tip, price_source: l.priceSrc.tip, price_refs: l.extra ? [] : lineRefs(l), flags: [l.qtySrc.cls, l.priceSrc.cls] })),
+    plan_edits: captionLines()[1][0],
+    warnings: costWarnings(lines), sources: prices.sources, check_against: prices.check_against, basis: prices.basis,
+  };
 }
-$("#btn-cost").onclick = () => toggleCost();
-document.addEventListener("pointerdown", (e) => {
-  // Clicks on the plan keep it open, so the engineer can fix counts and watch the total change.
-  if (costOpen() && !e.target.closest("#cost, #stage, .menu")) toggleCost(false);
-});
+
+function exportCostCSV(lines, t) {
+  const q = (v) => typeof v === "number" ? (Math.round(v * 100) / 100).toString() : `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["Item", "Spec", "Qty", "Unit", "Material €/unit", "Labour €/unit", "Material €", "Labour €", "Total €", "Quantity source", "Price source"]];
+  for (const l of lines) rows.push([l.label, l.spec, l.qty, l.unit, l.mat, l.lab, l.material, l.labour, l.material + l.labour, l.qtySrc.tip, l.priceSrc.tip]);
+  rows.push([], ["Subtotal excl. VAT", "", "", "", "", "", t.material, t.labour, t.net], [`VAT ${prices.vat * 100} %`, "", "", "", "", "", "", "", t.vat],
+    ["Total incl. VAT", "", "", "", "", "", "", "", t.total], [], [`Drawing: ${state.doc.file}`], ...costWarnings(lines).map((w) => [w]), [prices.basis]);
+  download(new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" }), `${stem()}_cost.csv`);
+}
+
+function openSubmit() {
+  const lines = costLines(), dlg = $("#submit-dlg"), form = $("#submit-form");
+  const det = lines.some((l) => l.qtySrc.cls === "warn"), est = lines.some((l) => l.priceSrc.cls === "warn");
+  // Human in the loop: the engineer confirms what the data can't vouch for.
+  $("#submit-checks").replaceChildren(
+    ...(det ? [h("label", {}, h("input", { type: "checkbox", required: true }), "I checked the detected quantities on the plan.")] : []),
+    ...(est ? [h("label", { className: "warn" }, h("input", { type: "checkbox", required: true, name: "est" }),
+      "I know some unit prices are unverified estimates (they are flagged in the quote).")] : []));
+  try { form.elements.by.value ||= localStorage.getItem("stoa.by") || ""; } catch {}
+  dlg.showModal();
+}
+$("#submit-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget, btn = form.querySelector("[type=submit]");
+  const lines = costLines(), t = costTotals(lines);
+  btn.disabled = true; btn.textContent = "Submitting…";
+  try {
+    const plan = await asDataURL(await toBlob(await planCanvas(1800, true), "image/jpeg", 0.85));
+    const r = await fetch(`/api/quotes/${state.doc.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: form.elements.to.value, by: form.elements.by.value.trim(), note: form.elements.note.value.trim(),
+        sig: costSig(lines), total: t.total, data: quoteData(lines, t), plan }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    const q = await r.json();
+    try { localStorage.setItem("stoa.by", form.elements.by.value.trim()); } catch {}
+    state.quotes.unshift(q);
+    $("#submit-dlg").close(); form.elements.note.value = "";
+    renderCost();
+    const url = `${location.origin}/quote/${q.id}`;
+    navigator.clipboard?.writeText(url).then(() => toast(`v${q.version} submitted · review link copied`, 5000), () => toast(`v${q.version} submitted`, 5000));
+    window.open(url, "_blank");
+  } catch (err) {
+    toast(`Submit failed: ${err.message}`, 6000);
+  } finally {
+    btn.disabled = false; btn.textContent = "Submit";
+  }
+};
+
+// The cost table needs ~520 px; widen the panel while it is shown and give the width back afterwards.
+function toggleCost(open = !costOpen()) {
+  panel.dataset.tab = open ? "cost" : "facts";
+  $("#tab-facts").setAttribute("aria-selected", !open);
+  $("#tab-cost").setAttribute("aria-selected", open);
+  if (open && panel.offsetWidth < 520 && innerWidth > 820) { widened = panel.offsetWidth; setPanelWidth(520, false); }
+  else if (!open && widened) { setPanelWidth(widened, false); widened = null; }
+  if (open) renderCost();
+}
+fetch("/static/prices.json").then((r) => r.json()).then((p) => { prices = p; if (state.doc) costOpen() ? renderCost() : costPill(); })
+  .catch(() => toast("Could not load prices"));
+$("#tab-facts").onclick = () => toggleCost(false);
+$("#tab-cost").onclick = () => toggleCost(true);
 
 $("#picker").onchange = (e) => loadDoc(e.target.value);
 loadDoc.n = 0;

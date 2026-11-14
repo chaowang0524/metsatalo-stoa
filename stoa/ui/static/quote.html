@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost Estimate Review</title>
+<style>
+:root { --bg: #f4f2ee; --panel: #fff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --accent: #e8590c;
+  --ok: #2b8a3e; --warn: #b26a00; --bad: #c92a2a; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+.bar { background: var(--ink); color: #fff; padding: 10px 16px; display: flex; gap: 12px; align-items: center; }
+.bar b span { font-weight: 400; opacity: .7; }
+.bar .act { margin-left: auto; display: flex; gap: 8px; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; min-height: 36px; }
+.bar button { background: transparent; color: #fff; border-color: #555; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+button.ok { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 600; }
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+.sheet { background: var(--panel); border-radius: 12px; padding: 20px 22px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.st { border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 700; background: #eef2ff; color: #3b5bdb; }
+.st.approved { background: #e6f4ea; color: var(--ok); }
+.st.changes { background: #fff3e0; color: var(--warn); }
+.note-box { margin: 14px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; }
+.warns { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid var(--warn); background: #fff8ec; color: #7a4a00; font-size: 13px; }
+.warns p { margin: 2px 0; }
+.indicative { display: inline-block; margin-top: 8px; font-weight: 700; color: var(--warn); letter-spacing: .04em; text-transform: uppercase; font-size: 12px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+.plan img { max-width: 100%; max-height: 75vh; margin: 0 auto; border: 1px solid var(--line); border-radius: 8px; display: block; }
+td strong, tfoot td { white-space: nowrap; }
+.plan figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.tbl { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; text-align: right; padding: 4px 6px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { text-align: right; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th:first-child, td:first-child { text-align: left; }
+td .spec { font-size: 11px; color: var(--muted); }
+.src { display: inline-block; font-size: 10px; font-weight: 600; border-radius: 4px; padding: 0 5px; margin: 3px 4px 0 0; background: var(--bg); color: var(--muted); }
+.src.ok { background: #e6f4ea; color: var(--ok); }
+.src.warn { background: #fff3e0; color: var(--warn); }
+.src.edit { background: #ffe8cc; color: #a84300; }
+.src.none { background: #ffe3e3; color: var(--bad); }
+tfoot td { border: 0; padding: 3px 6px; }
+tfoot .total td { font-size: 18px; font-weight: 700; padding-top: 8px; border-top: 2px solid var(--ink); }
+.sources { font-size: 12px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
+.sources dt { font-weight: 600; margin-top: 6px; }
+.sources dd { margin: 2px 0 0; color: var(--muted); }
+.decide { margin-top: 18px; padding: 14px; border: 2px solid var(--line); border-radius: 10px; }
+.decide h2 { font-size: 15px; margin: 0 0 8px; }
+.decide .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.decide input, .decide textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+.decide .fields { display: grid; gap: 8px; margin-bottom: 10px; }
+.credit { font-size: 11px; color: var(--muted); margin-top: 14px; }
+.err { padding: 40px; text-align: center; color: var(--bad); }
+@media print {
+  body { background: #fff; }
+  .bar, .decide form { display: none; }
+  main { padding: 0; max-width: none; }
+  .sheet { box-shadow: none; padding: 0; }
+  tr { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <b>Stoa <span>Cost estimate</span></b>
+  <div class="act">
+    <button id="csv">⤓ CSV</button>
+    <button id="print">⎙ Print / PDF</button>
+  </div>
+</header>
+<main id="root"><p class="muted">Loading…</p></main>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+function h(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); for (const k of kids) e.append(k); return e; }
+const eur = (n) => `${Math.round(n).toLocaleString("fi-FI")} €`;
+const num = (n) => `${+(+n).toFixed(2)}`;
+const qid = location.pathname.split("/").pop();
+const STATUS = { submitted: "Awaiting review", approved: "Approved", changes: "Changes requested" };
+const TAG = { ok: ["exact", "sourced"], warn: ["detector", "estimate"], edit: ["edited", "engineer"], none: ["", "no price"] };
+let quote;
+
+function render() {
+  const q = quote, d = q.data, t = d.totals;
+  document.title = `Estimate v${q.version} · ${d.drawing.file}`;
+  const when = (s) => new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+  const body = h("tbody");
+  for (const l of d.lines) {
+    const [qf, pf] = l.flags;
+    body.append(h("tr", {},
+      h("td", {}, h("strong", { textContent: l.label || "(unnamed)" }), l.spec ? h("div", { className: "spec", textContent: l.spec }) : "",
+        h("div", {}, h("span", { className: `src ${qf}`, title: l.qty_source, textContent: `qty: ${TAG[qf]?.[0] || ""}` }),
+          h("span", { className: `src ${pf}`, title: l.price_source, textContent: `price: ${TAG[pf]?.[1] || ""}` }))),
+      h("td", { textContent: `${num(l.qty)} ${l.unit}` }), h("td", { textContent: eur(l.material_unit) }), h("td", { textContent: eur(l.labour_unit) }),
+      h("td", {}, h("strong", { textContent: l.priced ? eur(l.total) : "–" }))));
+  }
+  const foot = (a, b, cls = "") => h("tr", { className: cls }, h("td", { colSpan: 4, textContent: a }), h("td", { textContent: b }));
+  const decided = q.decision;
+  $("#root").replaceChildren(h("div", { className: "sheet" },
+    h("h1", { textContent: `Cost estimate · ${d.drawing.file}` }),
+    h("div", { className: "meta" },
+      h("span", { className: `st ${q.status}`, textContent: `v${q.version} · ${STATUS[q.status] || q.status}` }),
+      h("span", { textContent: `for ${q.to === "client" ? "the client" : "internal approval"}` }),
+      h("span", { textContent: `prepared by ${q.by || "—"} · ${when(q.created)}` }),
+      h("span", { textContent: d.plan_edits })),
+    d.warnings.length ? h("div", { className: "indicative", textContent: "Indicative estimate: not a binding offer" }) : "",
+    q.note ? h("div", { className: "note-box", textContent: q.note }) : "",
+    d.warnings.length ? h("div", { className: "warns" }, ...d.warnings.map((w) => h("p", { textContent: `⚠ ${w}` }))) : "",
+    h("div", { className: "grid" },
+      h("div", { className: "tbl" }, h("table", {},
+        h("thead", {}, h("tr", {}, ...["Item", "Qty", "Material €/u", "Labour €/u", "Total"].map((x) => h("th", { textContent: x })))),
+        body,
+        h("tfoot", {}, foot("Material", eur(t.material)), foot("Labour", eur(t.labour)), foot("Subtotal, excl. VAT", eur(t.net)),
+          foot(`VAT ${num(d.vat * 100)} %`, eur(t.vat)), foot("Total, incl. VAT", eur(t.total), "total")))),
+      q.plan ? h("figure", { className: "plan", style: "margin:0" }, h("img", { src: q.plan, alt: "Edited plan" }),
+        h("figcaption", { textContent: "The plan as the engineer checked it: dashed + outlines were added on site, red crossed boxes rejected." })) : ""),
+    h("dl", { className: "sources" },
+      ...Object.values(d.sources).flatMap((s) => [
+        h("dt", {}, s.url ? h("a", { href: s.url, target: "_blank", rel: "noopener", textContent: s.label }) : s.label),
+        h("dd", { textContent: `${s.detail || ""}${s.date ? ` (${s.date})` : ""}` })]),
+      h("dt", { textContent: "Unit prices" }),
+      h("dd", {}, ...d.lines.filter((l) => l.price_refs?.length).map((l) => h("div", { style: "margin:0 0 6px" }, h("strong", { textContent: l.label }),
+        ...l.price_refs.map((r) => h("div", { style: "margin-left:8px" }, `${r.what}${r.value != null ? ` ${eur(r.value)}:` : ""} `,
+          r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener", textContent: r.note }) : r.note))))),
+      h("dt", { textContent: "Check prices against" }),
+      h("dd", {}, ...d.check_against.flatMap((c, i) => [i ? " · " : "", h("a", { href: c.url, target: "_blank", rel: "noopener", textContent: c.label })])),
+      h("dt", { textContent: "Scope" }), h("dd", { textContent: d.basis })),
+    h("div", { className: "decide" },
+      decided
+        ? h("div", {}, h("h2", { textContent: `${STATUS[q.status]} by ${decided.by || "—"} · ${when(decided.at)}` }),
+            decided.comment ? h("div", { className: "note-box", textContent: decided.comment }) : "")
+        : h("h2", { textContent: q.to === "client" ? "Your decision" : "Review" }),
+      h("form", { id: "decide" },
+        h("div", { className: "fields" },
+          h("input", { name: "by", placeholder: "Your name", required: true, autocomplete: "name" }),
+          h("textarea", { name: "comment", rows: 2, placeholder: "Comment (required when requesting changes)" })),
+        h("div", { className: "row" },
+          h("button", { type: "submit", className: "ok", value: "approved", textContent: q.to === "client" ? "✓ Accept" : "✓ Approve" }),
+          h("button", { type: "submit", value: "changes", textContent: "↩ Request changes" })))),
+    h("div", { className: "credit", textContent: `Drawing: ${d.drawing.credit || d.drawing.file}` })));
+  $("#decide").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget, status = e.submitter.value;
+    if (status === "changes" && !f.elements.comment.value.trim()) { f.elements.comment.focus(); f.elements.comment.placeholder = "Say what should change"; return; }
+    const r = await fetch(`/api/quote/${qid}/decision`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, by: f.elements.by.value.trim(), comment: f.elements.comment.value.trim() }) });
+    if (!r.ok) return alert("Could not save the decision");
+    await load();
+  };
+}
+
+async function load() {
+  const r = await fetch(`/api/quote/${qid}`);
+  if (!r.ok) { $("#root").replaceChildren(h("div", { className: "err", textContent: "Quote not found." })); return; }
+  quote = await r.json();
+  render();
+}
+$("#print").onclick = () => print();
+$("#csv").onclick = () => {
+  if (!quote) return;
+  const d = quote.data, t = d.totals;
+  const q = (v) => typeof v === "number" ? `${Math.round(v * 100) / 100}` : `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["Item", "Spec", "Qty", "Unit", "Material €/unit", "Labour €/unit", "Material €", "Labour €", "Total €", "Quantity source", "Price source"],
+    ...d.lines.map((l) => [l.label, l.spec, l.qty, l.unit, l.material_unit, l.labour_unit, l.material, l.labour, l.total, l.qty_source, l.price_source]),
+    [], ["Subtotal excl. VAT", "", "", "", "", "", t.material, t.labour, t.net], [`VAT ${d.vat * 100} %`, "", "", "", "", "", "", "", t.vat],
+    ["Total incl. VAT", "", "", "", "", "", "", "", t.total], [], [`Drawing: ${d.drawing.file}`, `Version ${quote.version}`, `Status: ${quote.status}`],
+    ...d.warnings.map((w) => [w]), [d.basis]];
+  const a = h("a", { href: URL.createObjectURL(new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" })),
+    download: `${d.drawing.file.replace(/\.[^.]+$/, "")}_estimate_v${quote.version}.csv` });
+  a.click();
+};
+load();
+</script>
+</body>
+</html>

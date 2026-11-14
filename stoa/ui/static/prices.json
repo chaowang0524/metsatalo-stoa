@@ -1,29 +1,663 @@
 {
-  "currency": "EUR",
-  "vat": 0.255,
-  "basis": "Indicative Finnish averages 2026, mid-range products, supplied and installed, excl. VAT. Labour at ~55–75 €/h (carpenter, plumber, electrician). Excludes design, demolition, permits and waterproofing of wet rooms.",
-  "items": {
-    "window":    { "label": "Window, triple-glazed, ~1.2×1.2 m", "material": 650,  "labour": 260 },
-    "door":      { "label": "Interior door with frame and handle", "material": 290,  "labour": 160 },
-    "toilet":    { "label": "WC, floor-mounted, with connection", "material": 320,  "labour": 230 },
-    "washbasin": { "label": "Washbasin with mixer tap",          "material": 240,  "labour": 190 },
-    "sink":      { "label": "Sink with mixer tap",               "material": 240,  "labour": 190 },
-    "bathtub":   { "label": "Bathtub, acrylic, with mixer",      "material": 750,  "labour": 420 },
-    "shower":    { "label": "Shower set with glass screen",      "material": 520,  "labour": 360 },
-    "sanitary":  { "label": "Sanitary fixture",                  "material": 350,  "labour": 250 },
-    "sauna":     { "label": "Sauna benches (lauteet)",           "material": 950,  "labour": 600 },
-    "closet":    { "label": "Wardrobe / closet unit",            "material": 480,  "labour": 140 },
-    "appliance": { "label": "Kitchen appliance, connected",      "material": 650,  "labour": 110 },
-    "fireplace": { "label": "Fireplace (tulisija)",              "material": 3600, "labour": 1500 },
-    "chimney":   { "label": "Chimney, element",                  "material": 2900, "labour": 1300 },
-    "stair":     { "label": "Stair flight, prefabricated",       "material": 3800, "labour": 1600 },
-    "railing":   { "label": "Railing section",                   "material": 520,  "labour": 240 },
-    "stove":     { "label": "Induction hob / stove, connected",  "material": 700,  "labour": 120 },
-    "fridge":    { "label": "Fridge-freezer, installed",         "material": 800,  "labour": 60 },
-    "radiator":  { "label": "Panel radiator with valve",         "material": 260,  "labour": 220 },
-    "drain":     { "label": "Floor drain, wet room",             "material": 90,   "labour": 160 },
-    "socket":    { "label": "Wall socket, double, flush",        "material": 25,   "labour": 55 },
-    "light":     { "label": "Ceiling light point with fixture",  "material": 80,   "labour": 70 }
+ "currency": "EUR",
+ "vat": 0.255,
+ "vat_src": "vat",
+ "basis": "Supplied and installed, excl. VAT. Consumer prices from Finnish retailers converted at 25.5 % VAT. Taloon category medians use regular (non-campaign) prices of the first listing page, checked 14 Nov 2026. Excludes design, demolition, permits, waterproofing of wet rooms and travel charges.",
+ "checked": "2026-11-14",
+ "sources": {
+  "researched": {
+   "label": "Finnish retail prices, Nov 2026",
+   "detail": "Each unit price is built from published Finnish prices: product and category prices and fixed installation prices on Taloon.com, the K-Rauta window guide, and published hourly rates for the hours we assume. Hover a price, or see the per-item list below, for the exact link and figure.",
+   "date": "2026-11-14",
+   "verified": true
   },
-  "floor": { "label": "Floor finish (parquet/laminate)", "unit": "m²", "material": 38, "labour": 24 }
+  "vat": {
+   "label": "Finnish general VAT rate 25.5 %",
+   "detail": "General rate since 1 Sep 2024 (Finnish Tax Administration).",
+   "url": "https://www.vero.fi/en/businesses-and-corporations/taxes-and-charges/vat/rates-of-vat/",
+   "verified": true
+  }
+ },
+ "rates": {
+  "carpenter": {
+   "eur_h_excl_vat": 41.8,
+   "label": "Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)",
+   "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+   "date": "2026-03-30"
+  },
+  "plumber": {
+   "eur_h_excl_vat": 72.5,
+   "label": "Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)",
+   "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
+   "date": "2025"
+  },
+  "electrician": {
+   "eur_h_excl_vat": 82.5,
+   "label": "Electrician 65–100 €/h excl. VAT, weekday hours (midpoint 82.5)",
+   "url": "https://sahkomiesvertailu.com/hinnat/sahkomiehen-hinta/sahkomiehen-tuntihinta",
+   "date": "2026-07-01"
+  }
+ },
+ "check_against": [
+  {
+   "label": "Haahtela price bank (building element costs, FI)",
+   "url": "https://www.haahtela.fi/"
+  },
+  {
+   "label": "Rakennustieto RT cost data (Rakennusosien kustannuksia)",
+   "url": "https://www.rakennustieto.fi/"
+  },
+  {
+   "label": "Statistics Finland building cost index (to index older prices)",
+   "url": "https://stat.fi/en/statistics/rki"
+  }
+ ],
+ "items": {
+  "window": {
+   "label": "Window, triple-glazed, wood-aluminium, installed",
+   "material": 875,
+   "labour": 380,
+   "src": "researched",
+   "material_src": {
+    "type": "guide range",
+    "url": "https://www.k-rauta.fi/inspiraatio-ja-ohjeet/remontointi/ikkunaremontin-hinta",
+    "incl_vat": 1100,
+    "note": "K-Rauta window renovation guide (updated 2026-02-16): a three-pane window costs about 1 000–1 200 € (midpoint 1 100)."
+   },
+   "labour_src": {
+    "type": "guide range",
+    "url": "https://www.k-rauta.fi/inspiraatio-ja-ohjeet/remontointi/ikkunaremontin-hinta",
+    "incl_vat": 475,
+    "note": "K-Rauta guide: installation about 400–550 € per window in 2026 (midpoint 475)."
+   }
+  },
+  "door": {
+   "label": "Interior door set: leaf, frame, lock body, hinges",
+   "material": 415,
+   "labour": 125,
+   "src": "researched",
+   "material_src": {
+    "type": "product",
+    "url": "https://www.taloon.com/valiovi-skando-pvkml-mittatilausovi-650-990mm",
+    "incl_vat": 519,
+    "note": "Taloon.com Skando PVKML interior door, regular price 519 € incl. VAT, delivered with frame, 2014 lock body and adjustable hinges."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 3,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 125.39999999999999,
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: fit frame, hang and adjust the door, fit the trims."
+   }
+  },
+  "toilet": {
+   "label": "WC, floor-mounted (S-trap), with connection",
+   "material": 570,
+   "labour": 160,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/wc-istuimet-viemarointi-lattiaan-s-lukko",
+    "incl_vat": 715,
+    "n": 42,
+    "range": [
+     652,
+     1041
+    ],
+    "note": "Median regular price of 42 products in Taloon.com 'wc-istuimet-viemarointi-lattiaan-s-lukko' (lids excluded) (interquartile 652–1041 € incl. VAT). Floor-mounted WCs, seat lids excluded."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/wc-istuimen-asennus",
+    "incl_vat": 199,
+    "note": "Taloon.com installation service, regular price 199 € incl. VAT. Remove the old WC, fix and connect the new one, test."
+   }
+  },
+  "washbasin": {
+   "label": "Washbasin with mixer tap",
+   "material": 465,
+   "labour": 205,
+   "src": "researched",
+   "material_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/pesualtaat",
+      "incl_vat": 268,
+      "n": 38,
+      "range": [
+       238,
+       311
+      ],
+      "note": "Median regular price of 38 products in Taloon.com 'pesualtaat' (interquartile 238–311 € incl. VAT). Basins."
+     },
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/pesuallashanat",
+      "incl_vat": 317,
+      "n": 48,
+      "range": [
+       219,
+       446
+      ],
+      "note": "Median regular price of 48 products in Taloon.com 'pesuallashanat' (interquartile 219–446 € incl. VAT). Basin mixer taps."
+     }
+    ],
+    "excl_vat": 466.13545816733074
+   },
+   "labour_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "fixed installation price",
+      "url": "https://www.taloon.com/pesuallashanan-asennus",
+      "incl_vat": 169,
+      "note": "Taloon.com installation service, regular price 169 € incl. VAT. Basin tap."
+     },
+     {
+      "type": "hours × rate",
+      "hours": 1,
+      "trade": "plumber",
+      "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
+      "excl_vat": 72.5,
+      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: mount the basin and connect the trap."
+     }
+    ],
+    "excl_vat": 207.16135458167332
+   }
+  },
+  "sink": {
+   "label": "Kitchen sink with mixer tap",
+   "material": 650,
+   "labour": 205,
+   "src": "researched",
+   "material_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/keittioaltaat",
+      "incl_vat": 433,
+      "n": 48,
+      "range": [
+       326,
+       546
+      ],
+      "note": "Median regular price of 48 products in Taloon.com 'keittioaltaat' (interquartile 326–546 € incl. VAT). Kitchen sinks."
+     },
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/keittiohanat",
+      "incl_vat": 382,
+      "n": 48,
+      "range": [
+       290,
+       544
+      ],
+      "note": "Median regular price of 48 products in Taloon.com 'keittiohanat' (interquartile 290–544 € incl. VAT). Kitchen mixer taps."
+     }
+    ],
+    "excl_vat": 649.402390438247
+   },
+   "labour_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "fixed installation price",
+      "url": "https://www.taloon.com/keittiohanan-asennus",
+      "incl_vat": 169,
+      "note": "Taloon.com installation service, regular price 169 € incl. VAT. Kitchen tap."
+     },
+     {
+      "type": "hours × rate",
+      "hours": 1,
+      "trade": "plumber",
+      "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
+      "excl_vat": 72.5,
+      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: set the sink into the worktop and connect the trap."
+     }
+    ],
+    "excl_vat": 207.16135458167332
+   }
+  },
+  "bathtub": {
+   "label": "Bathtub, acrylic, against the wall",
+   "material": 1095,
+   "labour": 320,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/kylpyammeet-seinan-viereen",
+    "incl_vat": 1375,
+    "n": 48,
+    "range": [
+     1086,
+     2126
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'kylpyammeet-seinan-viereen' (interquartile 1086–2126 € incl. VAT). Bathtubs for wall installation."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/kylpyammeen-asennus",
+    "incl_vat": 399,
+    "note": "Taloon.com installation service, regular price 399 € incl. VAT. Assemble, level, connect the waste, silicone the wall joint."
+   }
+  },
+  "shower": {
+   "label": "Shower: mixer + shower set and glass screen",
+   "material": 690,
+   "labour": 355,
+   "src": "researched",
+   "material_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/suihkut",
+      "incl_vat": 490,
+      "n": 48,
+      "range": [
+       237,
+       920
+      ],
+      "note": "Median regular price of 48 products in Taloon.com 'suihkut' (interquartile 237–920 € incl. VAT). Shower mixers and sets."
+     },
+     {
+      "type": "category median",
+      "url": "https://www.taloon.com/suihkuseinat",
+      "incl_vat": 378,
+      "n": 48,
+      "range": [
+       181,
+       519
+      ],
+      "note": "Median regular price of 48 products in Taloon.com 'suihkuseinat' (interquartile 181–519 € incl. VAT). Shower screens."
+     }
+    ],
+    "excl_vat": 691.6334661354582
+   },
+   "labour_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "fixed installation price",
+      "url": "https://www.taloon.com/sekoittajan-ja-suihkusetin-asennus",
+      "incl_vat": 189,
+      "note": "Taloon.com installation service, regular price 189 € incl. VAT. Mixer and shower set."
+     },
+     {
+      "type": "fixed installation price",
+      "url": "https://www.taloon.com/yksiosaisen-suihkuseinan-asennus-kiintea-kaantyva",
+      "incl_vat": 259,
+      "note": "Taloon.com installation service, regular price 259 € incl. VAT. Shower screen."
+     }
+    ],
+    "excl_vat": 356.9721115537849
+   }
+  },
+  "sauna": {
+   "label": "Sauna bench package (lauteet)",
+   "material": 740,
+   "labour": 375,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/laudepaketit",
+    "incl_vat": 928,
+    "n": 46,
+    "range": [
+     755,
+     1050
+    ],
+    "note": "Median regular price of 46 products in Taloon.com 'laudepaketit' (interquartile 755–1050 € incl. VAT). Bench packages."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/laudepaketin-asennus",
+    "incl_vat": 469,
+    "note": "Taloon.com installation service, regular price 469 € incl. VAT. Assemble and fix the bench package."
+   }
+  },
+  "closet": {
+   "label": "Wardrobe unit",
+   "material": 705,
+   "labour": 125,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/vaatekaapit",
+    "incl_vat": 885,
+    "n": 48,
+    "range": [
+     638,
+     1078
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'vaatekaapit' (interquartile 638–1078 € incl. VAT). Wardrobes."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 3,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 125.39999999999999,
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: assemble and fix one wardrobe unit."
+   }
+  },
+  "appliance": {
+   "label": "Kitchen appliance (dishwasher), connected",
+   "material": 915,
+   "labour": 95,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/astianpesukoneet",
+    "incl_vat": 1149,
+    "n": 48,
+    "range": [
+     586,
+     1534
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'astianpesukoneet' (interquartile 586–1534 € incl. VAT). Dishwashers, used for a generic kitchen appliance."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/astianpesukoneen-asennus",
+    "incl_vat": 119,
+    "note": "Taloon.com installation service, regular price 119 € incl. VAT. Connect water and drain, test."
+   }
+  },
+  "fireplace": {
+   "label": "Fireplace insert (takkasydän), excl. surround",
+   "material": 1765,
+   "labour": 670,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/takkasydamet",
+    "incl_vat": 2214,
+    "n": 48,
+    "range": [
+     1579,
+     3492
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'takkasydamet' (interquartile 1579–3492 € incl. VAT). Fireplace inserts only; the masonry or cladding surround is extra."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 16,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 668.8,
+    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: two working days to set the insert, connect the flue and build a simple surround."
+   }
+  },
+  "chimney": {
+   "label": "Chimney, prefabricated element",
+   "material": 1020,
+   "labour": 670,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/takkojen-savupiiput",
+    "incl_vat": 1279,
+    "n": 41,
+    "range": [
+     778,
+     1654
+    ],
+    "note": "Median regular price of 41 products in Taloon.com 'takkojen-savupiiput' (interquartile 778–1654 € incl. VAT). Prefabricated chimneys for fireplaces."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 16,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 668.8,
+    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: two working days incl. roof penetration; height-dependent."
+   }
+  },
+  "stair": {
+   "label": "Stair flight, straight, prefabricated",
+   "material": 2925,
+   "labour": 500,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/suorat-portaat",
+    "incl_vat": 3668,
+    "n": 48,
+    "range": [
+     1020,
+     4447
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'suorat-portaat' (interquartile 1020–4447 € incl. VAT). Straight prefabricated stairs (e.g. Dolle), mostly with a railing."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 12,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 501.59999999999997,
+    "note": "12 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: one and a half days to install a straight flight."
+   }
+  },
+  "railing": {
+   "label": "Stair railing section",
+   "material": 700,
+   "labour": 125,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/portaiden-tarvikkeet",
+    "incl_vat": 877,
+    "n": 16,
+    "range": [
+     252,
+     936
+    ],
+    "note": "Median regular price of 16 products in Taloon.com 'portaiden-tarvikkeet' (railings only) (interquartile 252–936 € incl. VAT). Stair railings ('kaide') among stair accessories."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 3,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 125.39999999999999,
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: fix one railing section."
+   }
+  },
+  "stove": {
+   "label": "Induction cooker, connected",
+   "material": 1190,
+   "labour": 75,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/liedet-ja-uunit",
+    "incl_vat": 1494,
+    "n": 18,
+    "range": [
+     1200,
+     1685
+    ],
+    "note": "Median regular price of 18 products in Taloon.com 'liedet-ja-uunit' (induction only) (interquartile 1200–1685 € incl. VAT). Induction cookers and hobs."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/lattialieden-asennus",
+    "incl_vat": 95,
+    "note": "Taloon.com installation service, regular price 95 € incl. VAT. Install and connect a free-standing cooker."
+   }
+  },
+  "fridge": {
+   "label": "Fridge-freezer, installed",
+   "material": 1480,
+   "labour": 20,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/jaakaappipakastimet",
+    "incl_vat": 1859,
+    "n": 48,
+    "range": [
+     880,
+     2873
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'jaakaappipakastimet' (interquartile 880–2873 € incl. VAT). Fridge-freezers; Taloon's range leans premium, so the median is high."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 0.5,
+    "trade": "carpenter",
+    "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
+    "excl_vat": 20.9,
+    "note": "0.5 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: unpack, place and level; no fixed connection needed."
+   }
+  },
+  "radiator": {
+   "label": "Water radiator with valve",
+   "material": 130,
+   "labour": 220,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/lampopatterit",
+    "incl_vat": 165,
+    "n": 30,
+    "range": [
+     73,
+     285
+    ],
+    "note": "Median regular price of 30 products in Taloon.com 'lampopatterit' (interquartile 73–285 € incl. VAT). Water radiators."
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 3,
+    "trade": "plumber",
+    "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
+    "excl_vat": 217.5,
+    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: drain the circuit, swap the radiator and valve, refill and bleed."
+   }
+  },
+  "drain": {
+   "label": "Floor drain, wet room",
+   "material": 80,
+   "labour": 220,
+   "src": "researched",
+   "material_src": {
+    "type": "sum",
+    "parts": [
+     {
+      "type": "product",
+      "url": "https://www.taloon.com/lattiakaivot",
+      "incl_vat": 48,
+      "note": "Meltex Merika 211 floor drain body Ø150, 48 € incl. VAT on Taloon.com."
+     },
+     {
+      "type": "product",
+      "url": "https://www.taloon.com/lattiakaivot",
+      "incl_vat": 51,
+      "note": "Meltex 197×197 stainless cover, 51 € incl. VAT on Taloon.com."
+     }
+    ],
+    "excl_vat": 78.88446215139443
+   },
+   "labour_src": {
+    "type": "hours × rate",
+    "hours": 3,
+    "trade": "plumber",
+    "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
+    "excl_vat": 217.5,
+    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: set and connect the drain; waterproofing and screed are not included."
+   }
+  },
+  "socket": {
+   "label": "Wall socket, double, flush",
+   "material": 30,
+   "labour": 120,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/pistorasiat",
+    "incl_vat": 39,
+    "n": 48,
+    "range": [
+     27,
+     68
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'pistorasiat' (interquartile 27–68 € incl. VAT). Sockets (includes some smart sockets)."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/pistorasian-asennus",
+    "incl_vat": 149,
+    "note": "Taloon.com installation service, regular price 149 € incl. VAT. Electrician installs one socket."
+   }
+  },
+  "light": {
+   "label": "Ceiling light point with fixture",
+   "material": 50,
+   "labour": 125,
+   "src": "researched",
+   "material_src": {
+    "type": "category median",
+    "url": "https://www.taloon.com/kattovalaisimet",
+    "incl_vat": 62,
+    "n": 48,
+    "range": [
+     34,
+     163
+    ],
+    "note": "Median regular price of 48 products in Taloon.com 'kattovalaisimet' (interquartile 34–163 € incl. VAT). Ceiling lights."
+   },
+   "labour_src": {
+    "type": "fixed installation price",
+    "url": "https://www.taloon.com/katto-ja-seinavalaisimen-asennus",
+    "incl_vat": 159,
+    "note": "Taloon.com installation service, regular price 159 € incl. VAT. Electrician installs one ceiling or wall light."
+   }
+  },
+  "sanitary": {
+   "label": "Sanitary fixture (generic)",
+   "material": 520,
+   "labour": 185,
+   "src": "researched",
+   "material_src": {
+    "type": "derived",
+    "excl_vat": 517.9282868525897,
+    "note": "Mean of the WC and washbasin material prices above (generic sanitary fixture)."
+   },
+   "labour_src": {
+    "type": "derived",
+    "excl_vat": 182.86354581673308,
+    "note": "Mean of the WC and washbasin labour prices above (generic sanitary fixture)."
+   }
+  }
+ },
+ "floor": {
+  "label": "Floor finish, laminate",
+  "unit": "m²",
+  "material": 27,
+  "labour": 21,
+  "src": "researched",
+  "material_src": {
+   "type": "category median",
+   "url": "https://www.taloon.com/laminaatti",
+   "incl_vat": 34,
+   "n": 53,
+   "range": [
+    18,
+    53
+   ],
+   "note": "Median regular price of 53 products in Taloon.com 'laminaatti' (interquartile 18–53 € incl. VAT). Laminate, price per m²."
+  },
+  "labour_src": {
+   "type": "fixed installation price",
+   "url": "https://www.taloon.com/laminaatin-ja-parketin-asennus",
+   "incl_vat": 26,
+   "note": "Taloon.com laminate installation 26 €/m² incl. VAT for 50–179 m² (27 €/m² below 50 m², 25 €/m² from 180 m²), plus a one-off 59 € travel charge. Parquet: 90 €/m² material, 29 €/m² installation."
+  }
+ }
 }

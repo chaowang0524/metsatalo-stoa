@@ -6,6 +6,8 @@
 
 import base64
 import json
+import secrets
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -22,6 +24,7 @@ from stoa.ui.facts import DATA, OUT
 
 STATIC = Path(__file__).parent / "static"
 EDITS = Path("out/edits")
+QUOTES = Path("out/quotes")
 OUT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Stoa plan review")
@@ -84,6 +87,9 @@ def drawing(source: str, stem: str):
     doc = json.loads(_doc_path(source, stem).read_text(encoding="utf-8"))
     e = _edits_path(source, stem)
     doc["edits"] = json.loads(e.read_text(encoding="utf-8")) if e.exists() else {"added": [], "rejected": []}
+    c = e.with_suffix(".cost.json")
+    doc["cost"] = json.loads(c.read_text(encoding="utf-8")) if c.exists() else {"lines": {}, "extra": []}
+    doc["quotes"] = _quotes_of(f"{source}/{stem}")
     return doc
 
 
@@ -98,6 +104,90 @@ def save_edits(source: str, stem: str, edits: Edits):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(edits.model_dump(), ensure_ascii=False), encoding="utf-8")
     return {"ok": True}
+
+
+class CostEdits(BaseModel):
+    lines: dict[str, dict] = {}  # line key (component kind or "floor") -> {qty, material, labour, note} typed by the engineer
+    extra: list[dict] = []  # lines the engineer added by hand
+
+
+@app.put("/api/cost/{source}/{stem}")
+def save_cost(source: str, stem: str, cost: CostEdits):
+    p = _edits_path(source, stem).with_suffix(".cost.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cost.model_dump(), ensure_ascii=False), encoding="utf-8")
+    return {"ok": True}
+
+
+# ---------- quotes: a frozen copy of the estimate, handed to an approver or the client ----------
+def _quote_path(qid: str) -> Path:
+    p = QUOTES / f"{qid}.json"
+    if not qid.isalnum() or not p.exists():
+        raise HTTPException(404, "unknown quote")
+    return p
+
+
+def _summary(q: dict) -> dict:
+    return {k: q.get(k) for k in ("id", "version", "to", "by", "created", "total", "status", "decision", "sig")}
+
+
+def _quotes_of(drawing: str) -> list[dict]:
+    if not QUOTES.exists():
+        return []
+    qs = [json.loads(p.read_text(encoding="utf-8")) for p in QUOTES.glob("*.json")]
+    return sorted((_summary(q) for q in qs if q.get("drawing") == drawing), key=lambda q: -q["version"])
+
+
+class Quote(BaseModel):
+    to: str = "approval"  # "approval" (site manager / cost controller) or "client"
+    by: str = ""
+    note: str = ""
+    sig: str = ""  # the estimate's fingerprint, to tell later whether it changed
+    total: float = 0
+    data: dict  # lines, totals, sources and warnings exactly as the engineer saw them
+    plan: str = ""  # data URL of the edited plan
+
+
+@app.post("/api/quotes/{source}/{stem}")
+def submit_quote(source: str, stem: str, q: Quote):
+    _doc_path(source, stem)
+    drawing = f"{source}/{stem}"
+    QUOTES.mkdir(parents=True, exist_ok=True)
+    rec = q.model_dump() | {
+        "id": secrets.token_hex(6), "drawing": drawing, "version": len(_quotes_of(drawing)) + 1,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "status": "submitted", "decision": None,
+    }
+    (QUOTES / f"{rec['id']}.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+    return _summary(rec)
+
+
+@app.get("/api/quote/{qid}")
+def get_quote(qid: str):
+    return json.loads(_quote_path(qid).read_text(encoding="utf-8"))
+
+
+class Decision(BaseModel):
+    status: str  # "approved" or "changes"
+    by: str = ""
+    comment: str = ""
+
+
+@app.post("/api/quote/{qid}/decision")
+def decide_quote(qid: str, d: Decision):
+    if d.status not in ("approved", "changes"):
+        raise HTTPException(400, "status must be approved or changes")
+    p = _quote_path(qid)
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    rec["status"] = d.status
+    rec["decision"] = d.model_dump() | {"at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+    return _summary(rec)
+
+
+@app.get("/quote/{qid}")
+def quote_page(qid: str):
+    _quote_path(qid)
+    return FileResponse(STATIC / "quote.html")
 
 
 class Ask(BaseModel):
