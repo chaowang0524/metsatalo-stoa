@@ -137,13 +137,10 @@ source at the end.
 
 | Feature | What it gives the engineer |
 |---|---|
-| Natural-language Q&A, any language | Counts, areas, lengths, volumes and free-text answers about a drawing or IFC model |
-| Evidence on the plan | Each answer highlights the exact CAD entities, IFC elements or table rows it came from |
-| Human correction loop | Add, reject or stamp objects. The facts and the cost update straight away |
-| Deterministic flag | Exact answers are marked as exact. Vision answers are marked as needing a check |
-| Pre-computed facts | Room areas and component counts for every plan, with no LLM cost |
-| Symbol library | Real door, window and fixture symbols taken from the CAD and IFC data |
-| Sourced cost estimate and quote | Plan quantities × cited Finnish prices, with editable lines and an approval link |
+| Grounded facts, at a glance | Component counts and room areas for every plan are pre-computed and shown on the plan, with no LLM cost. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
+| Live editing on site | Add, remove or stamp doors, windows, fixtures and other components on the plan. Counts update straight away |
+| Cost estimate, faster | Plan quantities × cited Finnish material and labour prices, with editable lines. "Submit" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
+| Human in the loop | The counting, model, the cost and even previous human annotations can be wrong. Every object stays visible and editable, edits are saved per drawing, and ⌘Z undoes them |
 | Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
 | Cost logging | Every model call is logged with its tokens, latency and USD cost (`logs/verda_calls.jsonl`) |
 

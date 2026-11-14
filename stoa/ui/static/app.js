@@ -1204,7 +1204,7 @@ function costLines() {
   };
   for (const f of components()) {
     const planQty = valueOf(f);
-    if (!planQty && ov[f.kind]?.qty == null) continue;
+    if (!planQty && !ov[f.kind]) continue; // keep a line the engineer typed into, even at 0 on the plan
     lines.push(line(f.kind, f, f.label, prices.items[f.kind], planQty, "pcs"));
   }
   const area = state.doc.facts.find((f) => f.id === "area_total");
@@ -1235,15 +1235,25 @@ function costWarnings(lines) {
   return w;
 }
 
-let costT;
-function saveCost() {
+let costT, costPending = null;
+function flushCost() {
   clearTimeout(costT);
-  costT = setTimeout(() => fetch(`/api/cost/${state.doc.id}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state.cost),
-  }).catch(() => toast("Could not save cost edits")), 400);
+  if (!costPending) return;
+  const { id, body } = costPending; costPending = null;
+  fetch(`/api/cost/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive: true })
+    .catch(() => toast("Could not save cost edits"));
 }
+// Snapshot the drawing and its edits now, so switching drawings within the delay can't drop or misfile them.
+function saveCost() {
+  if (costPending && costPending.id !== state.doc.id) flushCost();
+  costPending = { id: state.doc.id, body: JSON.stringify(state.cost) };
+  clearTimeout(costT);
+  costT = setTimeout(flushCost, 400);
+}
+addEventListener("pagehide", flushCost);
 
-// One number cell. Typing the original value back (or clearing it) drops the override.
+// One number cell. A typed value stays, even one equal to today's plan or list value, so later plan
+// edits never overwrite it; clearing the cell or ↺ hands it back to the automatic value.
 function numCell(l, field, base, value, cls = "") {
   const inp = h("input", { className: `num ${cls}`, type: "number", min: 0, step: field === "qty" && l.unit === "pcs" ? 1 : "any",
     value: +(+value).toFixed(2), title: base != null ? `From ${field === "qty" ? "the plan" : "the price list"}: ${base}` : "" });
@@ -1258,7 +1268,7 @@ function numCell(l, field, base, value, cls = "") {
     if (l.extra) l.extra[name] = v ?? 0;
     else {
       const o = state.cost.lines[l.key] ||= {};
-      if (v == null || v === base) delete o[name]; else o[name] = v;
+      if (v == null) delete o[name]; else o[name] = v;
       if (!Object.keys(o).filter((k) => k !== "note").length) delete state.cost.lines[l.key];
     }
     saveCost();
