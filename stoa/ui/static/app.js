@@ -1,4 +1,4 @@
-// Stoa Plan Check: pre-computed facts over the plan, hover to verify, edit, ask, render, share.
+// Stoa Plan Check: pre-computed facts over the plan, hover to verify, tap to add, ask, render and share the render.
 "use strict";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -18,7 +18,7 @@ const state = {
   view: { x: 0, y: 0, w: 1, h: 1 },
   pinned: null, hover: null, single: null, // fact ids / item key under the pointer
   adhoc: null, // an answer's evidence, shown like a fact
-  editing: false, addKind: null,
+  addKind: null, // insert mode: the kind a tap on the plan adds
 };
 
 // ---------- helpers ----------
@@ -96,7 +96,7 @@ async function loadIndex() {
 async function loadDoc(id) {
   const doc = await (await fetch(`/api/drawings/${id}`)).json();
   state.doc = doc; state.edits = doc.edits; state.history = [];
-  state.pinned = state.hover = state.single = state.adhoc = null;
+  state.pinned = state.hover = state.single = state.adhoc = state.addKind = null;
   history.replaceState(null, "", `#${id}`);
   const v = doc.view;
   const bg = $("#bg");
@@ -113,6 +113,7 @@ async function loadDoc(id) {
     h("span", { textContent: doc.source }),
   );
   $("#thread").replaceChildren();
+  closeMenu(); resetRender();
   buildPalette();
   fit();
   renderFacts();
@@ -186,23 +187,12 @@ function shapeEl(shape, attrs, parent) {
 }
 const unitsPerPx = () => state.view.w / Math.max(svg.clientWidth, 1);
 
-// Edit mode: every component faintly, clickable to reject. Additions: always shown.
+// The engineer's additions, always shown. data-added lets a right-click find them.
 function drawAll() {
-  const all = $("#layer-all"), ed = $("#layer-edits");
-  all.replaceChildren(); ed.replaceChildren();
-  if (state.editing) {
-    const rej = new Set(state.edits.rejected);
-    for (const f of state.doc.facts.filter((f) => f.group === "Components")) {
-      for (const it of f.items) {
-        const key = keyOf(f, it);
-        shapeEl(it.shape, { class: `ov ov-all${rej.has(key) ? " rej" : ""}`, fill: color(f.kind), stroke: color(f.kind),
-          "data-key": key, style: "cursor:pointer" }, all);
-      }
-    }
-  }
+  const ed = $("#layer-edits");
+  ed.replaceChildren();
   for (const a of state.edits.added) {
-    shapeEl({ bbox: a.bbox }, { class: "ov ov-add", fill: color(a.kind), stroke: color(a.kind),
-      "data-added": a.id, style: state.editing ? "cursor:pointer" : "" }, ed);
+    shapeEl({ bbox: a.bbox }, { class: "ov ov-add", fill: color(a.kind), stroke: color(a.kind), "data-added": a.id }, ed);
   }
 }
 
@@ -217,15 +207,17 @@ function drawHighlight() {
   let n = 0;
   for (const it of itemsOf(f)) {
     const one = state.single === it.ref;
+    // Tag shapes so a right-click knows what it hit; answer evidence isn't editable.
+    const tag = it.added ? { "data-added": it.ref } : f.id !== "__answer" ? { "data-key": keyOf(f, it) } : {};
     if (it.rejected) {
-      shapeEl(it.shape, { class: "ov ov-hl", fill: "#c92a2a", stroke: "#c92a2a", "stroke-dasharray": "4 3" }, layer);
+      shapeEl(it.shape, { class: "ov ov-hl", fill: "#c92a2a", stroke: "#c92a2a", "stroke-dasharray": "4 3", ...tag }, layer);
       continue;
     }
     n++;
-    shapeEl(it.shape, { class: `ov ov-hl${one ? " one" : ""}`, fill: c, stroke: c }, layer);
+    shapeEl(it.shape, { class: `ov ov-hl${one ? " one" : ""}`, fill: c, stroke: c, ...tag }, layer);
     const b = bboxOf(it.shape);
     const [cx, cy] = it.shape.poly ? center(b) : [b[0], b[1]];
-    el("circle", { cx, cy, r: one ? r * 1.3 : r, fill: c, class: "badge-c" }, layer);
+    el("circle", { cx, cy, r: one ? r * 1.3 : r, fill: c, class: "badge-c", ...tag }, layer);
     el("text", { x: cx, y: cy, "font-size": (n > 99 ? 9 : 12) * k * (one ? 1.3 : 1), class: "badge-t" }, layer).textContent = n;
   }
 }
@@ -262,14 +254,31 @@ function toView(clientX, clientY) {
 
 const pointers = new Map();
 let drag = null;
+let menuTarget = null, longPressAt = 0;
 svg.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) { menuTarget = e.target; return; } // right button: the contextmenu event handles it
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   svg.setPointerCapture(e.pointerId);
   drag = { x: e.clientX, y: e.clientY, view: { ...state.view }, moved: 0, target: e.target };
   if (pointers.size === 2) {
+    clearTimeout(drag.press);
     const [a, b] = [...pointers.values()];
     drag.pinch = Math.hypot(a.x - b.x, a.y - b.y);
+  } else if (e.pointerType !== "mouse") {
+    // Touch has no right-click: a long press opens the same menu (iOS never fires contextmenu).
+    const d = drag;
+    d.press = setTimeout(() => {
+      if (drag !== d || d.moved > 4 || pointers.size !== 1) return;
+      d.longpress = true; longPressAt = Date.now();
+      planMenu(d.x, d.y, d.target);
+    }, 550);
   }
+});
+svg.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  if (Date.now() - longPressAt < 1000) return; // Android fires this after our own long press
+  planMenu(e.clientX, e.clientY, menuTarget || e.target);
+  menuTarget = null;
 });
 svg.addEventListener("pointermove", (e) => {
   if (!pointers.has(e.pointerId) || !drag) return;
@@ -290,9 +299,10 @@ svg.addEventListener("pointermove", (e) => {
   }
 });
 function endPointer(e) {
-  pointers.delete(e.pointerId);
+  if (!pointers.delete(e.pointerId)) return;
   svg.classList.remove("dragging");
-  if (drag && drag.moved <= 4 && pointers.size === 0 && e.type === "pointerup") onPlanClick(e, drag.target);
+  clearTimeout(drag?.press);
+  if (drag && !drag.longpress && drag.moved <= 4 && pointers.size === 0 && e.type === "pointerup") onPlanClick(e);
   if (pointers.size === 0) drag = null;
 }
 svg.addEventListener("pointerup", endPointer);
@@ -303,37 +313,50 @@ $("#z-out").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(r.x 
 $("#z-fit").onclick = fit;
 window.addEventListener("resize", () => state.doc && fit());
 
-// ---------- editing ----------
+// ---------- editing: pick a kind, tap the plan to add; right-click / long-press to remove ----------
+const components = () => state.doc.facts.filter((f) => f.group === "Components");
+
+// Cursor in insert mode: a "+" in the armed kind's colour.
+const addCursor = (c) => `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="11" fill="${c}" stroke="#fff" stroke-width="2"/>` +
+  `<path d="M14 8.5v11M8.5 14h11" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>`)}") 14 14`;
+
 function buildPalette() {
   const box = $("#palette-kinds");
   box.replaceChildren();
-  for (const f of state.doc.facts.filter((f) => f.group === "Components")) {
+  for (const f of components()) {
     const b = h("button", { type: "button" }, h("span", { className: "swatch", style: `background:${color(f.kind)}` }), f.label.replace(/s$/, ""));
     b.setAttribute("aria-pressed", state.addKind === f.kind);
-    b.onclick = () => { state.addKind = state.addKind === f.kind ? null : f.kind; buildPalette(); };
+    b.onclick = () => arm(state.addKind === f.kind ? null : f.kind);
     box.append(b);
   }
-  svg.classList.toggle("adding", state.editing && !!state.addKind);
+  const k = state.addKind;
+  $("#palette").classList.toggle("armed", !!k);
+  $("#palette-hint").textContent = k ? `Tap the plan to place a ${k} · Esc to stop` : "Tap the plan to add";
+  $("#btn-undo").hidden = !state.history.length;
+  svg.classList.toggle("adding", !!k);
+  if (k) svg.style.setProperty("--add-cursor", addCursor(color(k)));
 }
-function setEditing(on) {
-  state.editing = on;
-  $("#btn-edit").setAttribute("aria-pressed", on);
-  $("#palette").hidden = !on;
-  if (!on) state.addKind = null;
-  buildPalette(); drawAll();
+
+// Insert mode stays on until the kind is tapped again or Esc, so several can be placed in a row.
+// Pinning the kind's fact shows what's already detected, so the engineer adds only what's missing.
+function arm(kind) {
+  state.addKind = kind;
+  if (kind) { state.pinned = components().find((f) => f.kind === kind)?.id ?? state.pinned; state.single = null; }
+  buildPalette(); renderFacts();
 }
-$("#btn-edit").onclick = () => setEditing(!state.editing);
 
 function commit(mutate) {
   state.history.push(JSON.stringify(state.edits));
   mutate(state.edits);
-  renderFacts(); saveEdits();
+  buildPalette(); renderFacts(); saveEdits();
 }
-$("#btn-undo").onclick = () => {
+function undo() {
   if (!state.history.length) return toast("Nothing to undo");
   state.edits = JSON.parse(state.history.pop());
-  renderFacts(); saveEdits();
-};
+  buildPalette(); renderFacts(); saveEdits();
+}
+$("#btn-undo").onclick = undo;
 let saveT;
 function saveEdits() {
   clearTimeout(saveT);
@@ -352,27 +375,53 @@ function defaultSize(kind) {
   return [s, s];
 }
 
-function onPlanClick(e, target) {
-  if (!state.editing) return;
-  const addedId = target?.getAttribute?.("data-added");
-  if (addedId) {
-    commit((ed) => { ed.added = ed.added.filter((a) => a.id !== addedId); });
-    return toast("Removed your addition");
-  }
-  const key = target?.getAttribute?.("data-key");
-  if (key && !state.addKind) {
-    const was = state.edits.rejected.includes(key);
-    commit((ed) => { ed.rejected = was ? ed.rejected.filter((k) => k !== key) : [...ed.rejected, key]; });
-    return toast(was ? "Restored" : "Rejected: not counted any more");
-  }
-  if (!state.addKind) return toast("Pick an object type above, or tap a detected object to reject it");
-  const p = toView(e.clientX, e.clientY);
-  const [w, hh] = defaultSize(state.addKind);
+function onPlanClick(e) {
   const kind = state.addKind;
+  if (!kind) return;
+  const p = toView(e.clientX, e.clientY);
+  const [w, hh] = defaultSize(kind);
   commit((ed) => ed.added.push({ id: `add-${Date.now()}`, kind, bbox: [p.x - w / 2, p.y - hh / 2, p.x + w / 2, p.y + hh / 2] }));
-  if (!state.pinned) state.pinned = state.doc.facts.find((f) => f.kind === kind && f.group === "Components")?.id;
-  renderFacts();
-  toast(`Added 1 ${kind}`);
+  toast(`Added 1 ${kind} · right-click it to remove`);
+}
+
+// ---------- pop-up menu (plan right-click, share) ----------
+let menu = null;
+function popMenu(x, y, entries, parent = document.body) {
+  closeMenu();
+  menu = h("div", { className: "menu", role: "menu" });
+  for (const [label, fn, cls] of entries) {
+    if (!fn) { menu.append(h("div", { className: "label", textContent: label })); continue; }
+    const b = h("button", { type: "button", role: "menuitem", textContent: label, className: cls || "" });
+    b.onclick = () => { closeMenu(); fn(); };
+    menu.append(b);
+  }
+  parent.append(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - r.height - 8))}px`;
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+function closeMenu() { menu?.remove(); menu = null; }
+document.addEventListener("pointerdown", (e) => { if (menu && !menu.contains(e.target)) closeMenu(); }, true);
+svg.addEventListener("wheel", closeMenu, { passive: true });
+
+function planMenu(x, y, target) {
+  const addedId = target?.getAttribute?.("data-added");
+  const key = target?.getAttribute?.("data-key");
+  if (addedId) {
+    const a = state.edits.added.find((a) => a.id === addedId);
+    if (!a) return;
+    popMenu(x, y, [[`Your added ${a.kind}`], [`Remove this ${a.kind}`, () => {
+      commit((ed) => { ed.added = ed.added.filter((x) => x.id !== addedId); });
+      toast(`Removed your ${a.kind}`);
+    }, "danger"]]);
+  } else if (key) {
+    const kind = key.split(":")[0];
+    const was = state.edits.rejected.includes(key);
+    popMenu(x, y, [[`Detected ${kind}`], was
+      ? [`Restore: count it again`, () => { commit((ed) => { ed.rejected = ed.rejected.filter((k) => k !== key); }); toast("Restored"); }]
+      : [`Reject: not on site`, () => { commit((ed) => { ed.rejected = [...ed.rejected, key]; }); toast("Rejected: not counted any more"); }, "danger"]]);
+  }
 }
 
 // ---------- ask ----------
@@ -423,64 +472,31 @@ function showAnswer(box, res) {
   if (res.unplaced) box.append(h("div", { className: "sub", textContent: `${res.unplaced} evidence items are not drawn on this plan.` }));
 }
 
-// ---------- export, render, share ----------
+// ---------- 3D render and sharing it ----------
 function loadImage(src) {
   return new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = src; });
 }
 
-// The plan as PNG. annotate: draw the highlighted fact with numbers; forRender: label additions by kind.
-async function planPNG({ maxSide = 2400, annotate = true, footer = true } = {}) {
+// The plan as the image model sees it: the drawing plus the engineer's additions, labelled by kind.
+async function planPNG(maxSide = 1600) {
   const v = state.doc.view;
   const s = Math.min(1, maxSide / Math.max(v.width, v.height)) || 1;
   const W = Math.round(v.width * s), H = Math.round(v.height * s);
-  const foot = footer ? 70 : 0;
-  const c = h("canvas", { width: W, height: H + foot });
+  const c = h("canvas", { width: W, height: H });
   const g = c.getContext("2d");
-  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H + foot);
+  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
   g.drawImage(await loadImage(v.background), 0, 0, W, H);
-  const box = (b, col, dash, label) => {
-    g.save();
-    g.strokeStyle = col; g.lineWidth = 3; g.setLineDash(dash ? [8, 5] : []);
-    g.fillStyle = col + "33";
-    g.fillRect(b[0] * s, b[1] * s, (b[2] - b[0]) * s, (b[3] - b[1]) * s);
-    g.strokeRect(b[0] * s, b[1] * s, (b[2] - b[0]) * s, (b[3] - b[1]) * s);
-    if (label) { g.fillStyle = col; g.font = "bold 16px Helvetica, Arial"; g.fillText(label, b[0] * s, b[1] * s - 4); }
-    g.restore();
-  };
-  for (const a of state.edits.added) box(a.bbox, color(a.kind), true, annotate ? `+${a.kind}` : a.kind);
-  if (annotate) {
-    const rej = new Set(state.edits.rejected);
-    for (const f of state.doc.facts) for (const it of f.items) if (rej.has(keyOf(f, it)) && f.group === "Components") {
-      const b = bboxOf(it.shape);
-      box(b, "#c92a2a", true, "✕ rejected");
-    }
-    const f = factById(state.pinned);
-    if (f) {
-      let n = 0;
-      for (const it of itemsOf(f)) {
-        if (it.rejected) continue;
-        const b = bboxOf(it.shape);
-        box(b, color(f.kind), false);
-        const [x, y] = it.shape.poly ? center(b) : [b[0], b[1]];
-        g.fillStyle = color(f.kind); g.beginPath(); g.arc(x * s, y * s, 13, 0, 7); g.fill();
-        g.fillStyle = "#fff"; g.font = "bold 14px Helvetica, Arial"; g.textAlign = "center"; g.textBaseline = "middle";
-        g.fillText(++n, x * s, y * s); g.textAlign = "start"; g.textBaseline = "alphabetic";
-      }
-    }
-  }
-  if (footer) {
-    g.fillStyle = "#1d1d1b"; g.fillRect(0, H, W, foot);
-    g.fillStyle = "#fff"; g.font = "bold 18px Helvetica, Arial";
-    g.fillText(`${state.doc.file}  ·  ${summaryLine()}`, 14, H + 28, W - 28);
-    g.font = "12px Helvetica, Arial"; g.fillStyle = "#bbb";
-    g.fillText(`Stoa Plan Check · ${state.doc.credit}`, 14, H + 52, W - 28);
+  for (const a of state.edits.added) {
+    const [x0, y0, x1, y1] = a.bbox.map((n) => n * s), col = color(a.kind);
+    g.strokeStyle = col; g.lineWidth = 3; g.setLineDash([8, 5]); g.fillStyle = col + "33";
+    g.fillRect(x0, y0, x1 - x0, y1 - y0); g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    g.fillStyle = col; g.font = "bold 16px Helvetica, Arial"; g.fillText(a.kind, x0, y0 - 4);
   }
   return new Promise((ok) => c.toBlob(ok, "image/png"));
 }
 
 function summaryLine() {
-  return state.doc.facts.filter((f) => f.group === "Components" && valueOf(f) > 0)
-    .map((f) => `${f.label} ${valueOf(f)}`).join(" · ");
+  return components().filter((f) => valueOf(f) > 0).map((f) => `${f.label} ${valueOf(f)}`).join(" · ");
 }
 function editSummary() {
   const lines = [];
@@ -492,25 +508,8 @@ function editSummary() {
   for (const [k, n] of Object.entries(rej)) lines.push(`−${n} ${k} rejected (not on site)`);
   return lines;
 }
-
-async function share(blob, name, title) {
-  const file = new File([blob], name, { type: blob.type });
-  const text = [`${state.doc.file}`, summaryLine(), ...editSummary(), "", `Source: ${state.doc.credit}`].join("\n");
-  if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title, text }); return; }
-    catch (e) { if (e.name === "AbortError") return; }
-  }
-  // Desktop fallback: save the file, open a mail draft to attach it to.
-  const url = URL.createObjectURL(blob);
-  h("a", { href: url, download: name }).click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-  location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + `\n\n(Attach ${name}, saved to your downloads.)`)}`;
-  toast(`Saved ${name}: attach it to the email`, 5000);
-}
 const stem = () => state.doc.file.replace(/\.[^.]+$/, "");
-$("#btn-share").onclick = async () => share(await planPNG(), `${stem()}_checked.png`, `Plan check: ${state.doc.file}`);
 
-// 3D render
 let lastRender = null;
 $("#btn-render").onclick = () => $("#render-dlg").showModal();
 $("#btn-generate").onclick = async () => {
@@ -519,7 +518,7 @@ $("#btn-generate").onclick = async () => {
   btn.disabled = true;
   out.replaceChildren(h("p", {}, h("span", { className: "spinner" }), " Rendering… usually 10–30 s"));
   try {
-    const png = await planPNG({ maxSide: 1600, annotate: false, footer: false });
+    const png = await planPNG();
     const dataUrl = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(png); });
     const style = document.querySelector("input[name=style]:checked").value;
     const r = await fetch("/api/render", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -535,12 +534,64 @@ $("#btn-generate").onclick = async () => {
     out.replaceChildren(h("p", { className: "muted", textContent: `Render failed: ${err.message}` }));
   } finally { btn.disabled = false; }
 };
-$("#btn-share-3d").onclick = () => lastRender &&
-  share(lastRender, `${stem()}_3d.${lastRender.type.split("/")[1] || "png"}`, `3D view: ${state.doc.file}`);
+function resetRender() {
+  lastRender = null;
+  $("#btn-share-3d").disabled = true;
+  $("#render-out").replaceChildren(h("p", { className: "muted",
+    textContent: "Renders the plan as you edited it. AI illustration only: use the plan for counts and measurements." }));
+}
+
+// The clipboard only takes PNG everywhere; Gemini may return JPEG.
+async function asPNG(blob) {
+  if (blob.type === "image/png") return blob;
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImage(url);
+    const c = h("canvas", { width: img.naturalWidth, height: img.naturalHeight });
+    c.getContext("2d").drawImage(img, 0, 0);
+    return await new Promise((ok) => c.toBlob(ok, "image/png"));
+  } finally { URL.revokeObjectURL(url); }
+}
+async function copyRender() {
+  try {
+    // Pass the promise straight in: Safari drops the user gesture across an await.
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": asPNG(lastRender) })]);
+    toast("Render copied: paste it into a chat or report");
+  } catch (e) {
+    toast(`Could not copy: ${e.message}`, 5000);
+  }
+}
+async function emailRender() {
+  const name = `${stem()}_3d.${lastRender.type.split("/")[1] || "png"}`;
+  const title = `3D view: ${state.doc.file}`;
+  const text = [state.doc.file, summaryLine(), ...editSummary(), "",
+    "AI illustration of the plan, not for measurement.", `Source: ${state.doc.credit}`].join("\n");
+  const file = new File([lastRender], name, { type: lastRender.type });
+  // Phones and tablets: the share sheet attaches the file to a new mail directly.
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title, text }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  // mailto can't carry an attachment: save the file, then open the draft to attach it to.
+  const url = URL.createObjectURL(lastRender);
+  h("a", { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + `\n\n(Attach ${name}, saved to your downloads.)`)}`;
+  toast(`Saved ${name}: attach it to the email`, 5000);
+}
+$("#btn-share-3d").onclick = (e) => {
+  if (!lastRender) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  popMenu(r.left, r.bottom + 4, [["Copy to clipboard", copyRender], ["Attach to an email", emailRender]], $("#render-dlg"));
+};
 
 $("#picker").onchange = (e) => loadDoc(e.target.value);
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && state.pinned) { state.pinned = null; renderFacts(); }
-  if ((e.metaKey || e.ctrlKey) && e.key === "z" && state.editing) { e.preventDefault(); $("#btn-undo").click(); }
+  if (e.key === "Escape") {
+    if (menu) return closeMenu();
+    if (state.addKind) return arm(null);
+    if (state.pinned) { state.pinned = null; renderFacts(); }
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.target.closest?.("input, textarea")) { e.preventDefault(); undo(); }
 });
 loadIndex();

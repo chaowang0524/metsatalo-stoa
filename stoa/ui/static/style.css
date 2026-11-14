@@ -34,17 +34,21 @@ button.small { min-height: 30px; padding: 3px 10px; }
 .tool[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 
 main { flex: 1; display: flex; min-height: 0; }
-#stage { position: relative; flex: 1; min-width: 0; background: #e9e6df; overflow: hidden; touch-action: none; }
+#stage { position: relative; flex: 1; min-width: 0; background: #e9e6df; overflow: hidden; touch-action: none;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 #plan { width: 100%; height: 100%; display: block; cursor: grab; }
-#plan.adding { cursor: crosshair; }
+#plan.adding, #plan.adding * { cursor: var(--add-cursor), crosshair; }
 #plan.dragging { cursor: grabbing; }
 #credit { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted);
   background: rgba(255,255,255,.8); padding: 2px 6px; border-radius: 4px; max-width: 70%; }
 .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
 .zoom button { width: 40px; height: 40px; padding: 0; font-size: 18px; }
 
-#palette { position: absolute; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; align-items: center;
-  gap: 6px; background: var(--panel); border: 2px solid var(--accent); border-radius: var(--radius); padding: 8px 10px; }
+#palette { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 24px); display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px; background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
+  padding: 6px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+#palette.armed { border-color: var(--accent); }
+#palette.armed #palette-hint { color: var(--accent); font-weight: 600; }
 #palette-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 #palette-kinds button { display: flex; gap: 6px; align-items: center; }
 #palette-kinds button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
@@ -100,8 +104,6 @@ main { flex: 1; display: flex; min-height: 0; }
 
 /* plan overlay */
 .ov { vector-effect: non-scaling-stroke; }
-.ov-all { fill-opacity: .08; stroke-opacity: .55; stroke-width: 1.5; }
-.ov-all.rej { fill: var(--bad) !important; fill-opacity: .15; stroke: var(--bad) !important; stroke-dasharray: 4 3; }
 .ov-hl { fill-opacity: .22; stroke-width: 2.5; }
 .ov-hl.one { fill-opacity: .45; stroke-width: 4; }
 .ov-add { fill-opacity: .25; stroke-width: 2.5; stroke-dasharray: 6 3; }
@@ -117,6 +119,13 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 #render-out { padding: 0 16px; min-height: 120px; display: flex; align-items: center; justify-content: center; }
 #render-out img { max-width: 100%; max-height: 62vh; border-radius: 8px; }
 .dlg-foot { padding: 12px 16px; text-align: right; }
+
+.menu { position: fixed; z-index: 20; min-width: 190px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 4px; display: flex; flex-direction: column; }
+.menu button { border: 0; text-align: left; border-radius: 6px; min-height: 40px; padding: 8px 12px; }
+.menu button:hover, .menu button:focus-visible { background: var(--hover); outline: none; }
+.menu .danger { color: var(--bad); }
+.menu .label { font-size: 11px; color: var(--muted); padding: 6px 12px 2px; }
 
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff;
   padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
