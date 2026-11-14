@@ -241,7 +241,7 @@ function factRow(f) {
   const val = valueOf(f);
   const changed = f.unit === "count" && val !== f.value;
   const row = h("div", {
-    className: `fact${state.pinned === f.id ? " pinned" : ""}${val === 0 ? " zero" : ""}`,
+    className: `fact${state.pinned === f.id ? " pinned" : ""}${state.addKind === f.kind && f.group === "Components" ? " adding" : ""}${val === 0 ? " zero" : ""}`,
     tabIndex: 0,
   });
   const valEl = h("span", { className: "val" });
@@ -252,11 +252,20 @@ function factRow(f) {
     h("span", { textContent: f.label }),
     valEl,
     h("span", { className: "flag", title: f.deterministic ? "exact, from the drawing's source data" : "model detection: please verify",
-      textContent: changed ? "✎" : f.deterministic ? "✓" : "⚠" }),
+      textContent: state.addKind === f.kind && f.group === "Components" ? "⊕" : changed ? "✎" : f.deterministic ? "✓" : "⚠" }),
   );
   row.onmouseenter = () => { state.hover = f.id; drawHighlight(); row.classList.add("hl"); };
   row.onmouseleave = () => { state.hover = null; drawHighlight(); row.classList.remove("hl"); };
-  row.onclick = () => { state.pinned = state.pinned === f.id ? null : f.id; state.single = null; renderFacts(); };
+  // A component row also starts counting by hand: tap the plan to add one, right-click one to remove it.
+  if (f.group === "Components") row.title = "Click to correct the count: tap the plan to add, right-click to remove";
+  row.onclick = () => {
+    if (f.group === "Components") {
+      const off = state.addKind === f.kind && !state.addLib;
+      if (off) state.pinned = null;
+      return arm(off ? null : f.kind);
+    }
+    state.pinned = state.pinned === f.id ? null : f.id; state.single = null; renderFacts();
+  };
   row.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.onclick(); } };
   if (state.pinned !== f.id) return [row];
   return [row, h("div", { className: "method", textContent: `Method: ${f.method}` }), itemList(f)];
@@ -459,7 +468,7 @@ function buildPalette() {
   const k = state.addKind, v = state.addLib && state.addLib !== "generic" ? libVariant(state.addLib) : null;
   const which = v ? ` (library, ${v.label})` : state.addLib ? " (standard symbol)" : "";
   $("#palette").classList.toggle("armed", !!k);
-  $("#palette-hint").textContent = k ? `Tap the plan to place a ${kindName(k)}${which} · Esc to stop` : "Tap the plan to add";
+  $("#palette-hint").textContent = k ? `Tap the plan to add a ${kindName(k)}${which}, right-click one to remove · Esc to stop` : "Tap the plan to add";
   $("#btn-undo").hidden = !state.history.length;
   svg.classList.toggle("adding", !!k);
   if (k) svg.style.setProperty("--add-cursor", addCursor(color(k)));
@@ -813,6 +822,17 @@ svg.addEventListener("wheel", closeMenu, { passive: true });
 function planMenu(x, y, target) {
   const addedId = target?.closest?.("[data-added]")?.getAttribute("data-added") ?? (target?.closest?.("[data-handle]") && state.sel);
   const key = target?.getAttribute?.("data-key");
+  // While counting a kind by hand, a right-click on one of that kind removes it at once (⌘Z undoes).
+  const k = state.addKind;
+  if (k && addedId) {
+    const a = state.edits.added.find((a) => a.id === addedId);
+    if (a?.kind === k) { select(a.id); return removeSel(); }
+  }
+  if (k && key?.split(":")[0] === k) {
+    const was = state.edits.rejected.includes(key);
+    commit((ed) => { ed.rejected = was ? ed.rejected.filter((x) => x !== key) : [...ed.rejected, key]; });
+    return toast(was ? `Restored 1 ${kindName(k)}` : `Removed 1 ${kindName(k)}: not counted any more · ⌘Z to undo`);
+  }
   if (addedId) {
     const a = state.edits.added.find((a) => a.id === addedId);
     if (!a) return;
