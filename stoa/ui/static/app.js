@@ -141,6 +141,7 @@ function renderFacts() {
   }
   box.scrollTop = scroll;
   drawAll(); drawHighlight();
+  if (costOpen()) renderCost();
 }
 
 function factRow(f) {
@@ -593,6 +594,85 @@ $("#btn-share-3d").onclick = (e) => {
   popMenu(r.left, r.bottom + 4, [["Copy to clipboard", copyRender], ["Attach to an email", emailRender]], $("#render-dlg"));
 };
 
+// ---------- cost estimate: plan quantities (with the engineer's edits) × Finnish unit prices ----------
+let prices = null;
+const eur = (n) => `${Math.round(n).toLocaleString("fi-FI")} €`;
+const costOpen = () => !$("#cost-pop").hidden;
+
+function costLines() {
+  const lines = [], unpriced = [];
+  for (const f of components()) {
+    const qty = valueOf(f), p = prices.items[f.kind];
+    if (!qty) continue;
+    if (!p) { unpriced.push(`${f.label} ${qty}`); continue; }
+    lines.push({ fact: f, label: f.label, spec: p.label, qty, was: f.value, unit: "pcs",
+      material: qty * p.material, labour: qty * p.labour });
+  }
+  const area = state.doc.facts.find((f) => f.id === "area_total");
+  if (area?.value) {
+    const p = prices.floor, qty = area.value;
+    lines.push({ fact: area, label: "Floor finish", spec: `${p.label}, ${p.material + p.labour} €/${p.unit}`, qty, was: qty,
+      unit: p.unit, material: qty * p.material, labour: qty * p.labour });
+  }
+  return { lines, unpriced };
+}
+
+function renderCost() {
+  const pop = $("#cost-pop");
+  if (!prices) { pop.replaceChildren(h("p", { className: "muted", textContent: "Loading prices…" })); return; }
+  const { lines, unpriced } = costLines();
+  const sum = (k) => lines.reduce((s, l) => s + l[k], 0);
+  const mat = sum("material"), lab = sum("labour"), net = mat + lab, vat = net * prices.vat;
+  const body = h("tbody");
+  for (const l of lines) {
+    const qty = h("td");
+    if (l.unit === "pcs" && l.qty !== l.was) qty.append(h("span", { className: "was", textContent: l.was }));
+    qty.append(l.unit === "pcs" ? `${l.qty}` : `${l.qty.toFixed(1)} ${l.unit}`);
+    const tr = h("tr", { title: "Show these on the plan" },
+      h("td", {}, h("div", { className: "what" }, h("span", { className: "swatch", style: `background:${color(l.fact.kind)}` }), l.label),
+        h("div", { className: "spec", textContent: l.spec })),
+      qty, h("td", { textContent: eur(l.material) }), h("td", { textContent: eur(l.labour) }),
+      h("td", {}, h("strong", { textContent: eur(l.material + l.labour) })));
+    tr.classList.toggle("hl", state.pinned === l.fact.id);
+    tr.onmouseenter = () => { state.hover = l.fact.id; drawHighlight(); };
+    tr.onmouseleave = () => { state.hover = null; drawHighlight(); };
+    tr.onclick = () => { state.pinned = state.pinned === l.fact.id ? null : l.fact.id; state.single = null; renderFacts(); };
+    body.append(tr);
+  }
+  const foot = (label, val, cls = "") => h("tr", { className: cls }, h("td", { colSpan: 4, textContent: label }), h("td", { textContent: val }));
+  const edited = state.edits.added.length + state.edits.rejected.length;
+  pop.replaceChildren(
+    h("div", { className: "head" }, h("strong", { textContent: "Cost estimate" }),
+      h("span", { className: "muted", textContent: edited ? `includes your ${edited} edit${edited > 1 ? "s" : ""}` : "quantities from the plan" })),
+    lines.length ? h("table", {},
+      h("thead", {}, h("tr", {}, ...["Item", "Qty", "Material", "Labour", "Total"].map((t) => h("th", { textContent: t })))),
+      body,
+      h("tfoot", {},
+        foot("Material", eur(mat)), foot("Labour", eur(lab)), foot("Subtotal, excl. VAT", eur(net)),
+        foot(`VAT ${(prices.vat * 100).toFixed(1).replace(/\.0$/, "")} %`, eur(vat)),
+        foot("Total, incl. VAT", eur(net + vat), "total")))
+      : h("p", { className: "muted", textContent: "No priced components on this plan." }),
+    unpriced.length ? h("p", { className: "note", textContent: `Not priced: ${unpriced.join(", ")}.` }) : "",
+    !state.doc.facts.every((f) => f.deterministic)
+      ? h("p", { className: "note", textContent: "⚠ Quantities come from a detector: check them on the plan (tap a row) before quoting." }) : "",
+    h("p", { className: "note", textContent: prices.basis }),
+  );
+}
+
+function toggleCost(open = !costOpen()) {
+  $("#cost-pop").hidden = !open;
+  $("#btn-cost").setAttribute("aria-expanded", open);
+  if (!open) return;
+  renderCost();
+  if (!prices) fetch("/static/prices.json").then((r) => r.json()).then((p) => { prices = p; if (costOpen()) renderCost(); })
+    .catch(() => toast("Could not load prices"));
+}
+$("#btn-cost").onclick = () => toggleCost();
+document.addEventListener("pointerdown", (e) => {
+  // Clicks on the plan keep it open, so the engineer can fix counts and watch the total change.
+  if (costOpen() && !e.target.closest("#cost, #stage, .menu")) toggleCost(false);
+});
+
 $("#picker").onchange = (e) => loadDoc(e.target.value);
 loadDoc.n = 0;
 
@@ -665,6 +745,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     if (menu) return closeMenu();
+    if (costOpen()) return toggleCost(false);
     if (state.addKind) return arm(null);
     if (state.pinned) { state.pinned = null; renderFacts(); }
   }

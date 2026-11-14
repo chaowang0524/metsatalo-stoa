@@ -1,0 +1,23 @@
+{
+  "currency": "EUR",
+  "vat": 0.255,
+  "basis": "Indicative Finnish averages 2026, mid-range products, supplied and installed, excl. VAT. Labour at ~55–75 €/h (carpenter, plumber, electrician). Excludes design, demolition, permits and waterproofing of wet rooms.",
+  "items": {
+    "window":    { "label": "Window, triple-glazed, ~1.2×1.2 m", "material": 650,  "labour": 260 },
+    "door":      { "label": "Interior door with frame and handle", "material": 290,  "labour": 160 },
+    "toilet":    { "label": "WC, floor-mounted, with connection", "material": 320,  "labour": 230 },
+    "washbasin": { "label": "Washbasin with mixer tap",          "material": 240,  "labour": 190 },
+    "sink":      { "label": "Sink with mixer tap",               "material": 240,  "labour": 190 },
+    "bathtub":   { "label": "Bathtub, acrylic, with mixer",      "material": 750,  "labour": 420 },
+    "shower":    { "label": "Shower set with glass screen",      "material": 520,  "labour": 360 },
+    "sanitary":  { "label": "Sanitary fixture",                  "material": 350,  "labour": 250 },
+    "sauna":     { "label": "Sauna benches (lauteet)",           "material": 950,  "labour": 600 },
+    "closet":    { "label": "Wardrobe / closet unit",            "material": 480,  "labour": 140 },
+    "appliance": { "label": "Kitchen appliance, connected",      "material": 650,  "labour": 110 },
+    "fireplace": { "label": "Fireplace (tulisija)",              "material": 3600, "labour": 1500 },
+    "chimney":   { "label": "Chimney, element",                  "material": 2900, "labour": 1300 },
+    "stair":     { "label": "Stair flight, prefabricated",       "material": 3800, "labour": 1600 },
+    "railing":   { "label": "Railing section",                   "material": 520,  "labour": 240 }
+  },
+  "floor": { "label": "Floor finish (parquet/laminate)", "unit": "m²", "material": 38, "labour": 24 }
+}
