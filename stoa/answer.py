@@ -74,5 +74,9 @@ def parse_llm_answer(text: str) -> dict:
             value = float(v)
     if isinstance(value, float) and value.is_integer():
         value = int(value)
+    # Units describe scalar quantities. Models sometimes copy a tool's unit
+    # onto prose explaining that the requested information is unavailable.
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        data["unit"] = None
     data["answer"] = value
     return data

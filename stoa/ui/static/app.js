@@ -46,7 +46,13 @@ function bboxOf(shape) {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 const center = (b) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
-const fmt = (v, unit) => unit === "m2" ? `${Number(v).toFixed(2)} m²` : unit === "count" || unit == null ? `${v}` : `${v} ${unit}`;
+function fmt(v, unit) {
+  if (v == null || (typeof v === "string" && !v.trim())) return "No answer available";
+  const numeric = (typeof v === "number" || typeof v === "string") && Number.isFinite(Number(v));
+  if (!numeric) return typeof v === "number" ? "No answer available" : `${v}`;
+  if (unit === "m2") return `${Number(v).toFixed(2)} m²`;
+  return unit === "count" || unit == null ? `${v}` : `${v} ${unit}`;
+}
 const keyOf = (fact, item) => `${fact.kind}:${item.ref}`;
 
 // Number items the way a person counts: row by row, left to right.
@@ -143,6 +149,11 @@ function renderFacts() {
   }
   box.scrollTop = scroll;
   drawAll(); drawHighlight();
+  for (const btn of $("#thread").querySelectorAll(".reference-toggle")) {
+    const active = state.pinned === "__answer" && state.adhoc?.button === btn;
+    btn.setAttribute("aria-pressed", String(active));
+    btn.textContent = active ? "Hide references" : `Highlight references (${btn.dataset.referenceCount})`;
+  }
   if (costOpen()) renderCost();
 }
 
@@ -675,22 +686,33 @@ function showAnswer(box, res) {
   if (!ans) { box.replaceChildren(h("span", { className: "muted", textContent: res.error || "No answer" })); return; }
   const tools = res.calls.map((c) => c.tool).join(" → ") || "—";
   const cost = res.cost_usd ? `$${res.cost_usd.toFixed(4)}` : "$0";
-  box.replaceChildren(
-    h("div", { className: "big", textContent: typeof ans.value === "object" ? "see list" : fmt(ans.value, ans.unit) }),
+  const numeric = typeof ans.value === "number" && Number.isFinite(ans.value);
+  const details = h("details", { className: "answer-details" },
+    h("summary", { textContent: "Sources and calculation details" }),
     h("div", {}, h("span", { className: `badge ${ans.deterministic ? "det" : "model"}`,
       textContent: ans.deterministic ? "exact" : "model answer · verify" }), " ", ans.method),
     ans.note ? h("div", { className: "sub", textContent: ans.note }) : "",
     h("div", { className: "sub", textContent: `${tools} · ${res.llm_calls} LLM calls · ${res.prompt_tokens + res.completion_tokens} tokens · ${cost}` }),
   );
+  box.replaceChildren(
+    h("div", { className: numeric ? "big" : "answer-text", textContent: ans.value !== null && typeof ans.value === "object" ? "see list" : fmt(ans.value, ans.unit) }),
+    details,
+  );
   if (res.items?.length) {
-    const btn = h("button", { className: "small", textContent: `Show ${res.items.length} on plan` });
+    const btn = h("button", { className: "small reference-toggle", textContent: `Highlight references (${res.items.length})`,
+      title: "Highlight the drawing objects used as supporting evidence for this answer." });
+    btn.dataset.referenceCount = res.items.length;
+    btn.setAttribute("aria-pressed", "false");
     btn.onclick = () => {
-      state.adhoc = { id: "__answer", kind: "answer", items: ordered(res.items) };
-      state.pinned = "__answer"; renderFacts();
+      const active = state.pinned === "__answer" && state.adhoc?.button === btn;
+      state.adhoc = active ? null : { id: "__answer", kind: "answer", items: ordered(res.items), button: btn };
+      state.pinned = active ? null : "__answer";
+      state.single = state.hover = null;
+      renderFacts();
     };
     box.append(btn);
   }
-  if (res.unplaced) box.append(h("div", { className: "sub", textContent: `${res.unplaced} evidence items are not drawn on this plan.` }));
+  if (res.unplaced) details.append(h("div", { className: "sub", textContent: `${res.unplaced} evidence items are not drawn on this plan.` }));
 }
 
 // ---------- 3D render and sharing it ----------

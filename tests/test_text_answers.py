@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import ifcopenshell
 from stoa import pipeline, verda
-from stoa.answer import Answer
+from stoa.answer import Answer, parse_llm_answer
 from stoa.inspect_file import FileInfo
 from stoa.tools import ifc_tools as ifc
 
@@ -85,14 +85,14 @@ class ToolCall:
 
 
 class CompositionTests(unittest.TestCase):
-    def run_pipeline(self, calls, error=None):
+    def run_pipeline(self, calls, error=None, content=None):
         tool = pipeline.Tool("ifc_count", "test", {"ifc_class": pipeline._s("class")},
                              "ifc", lambda path, ifc_class: Answer(14))
         first = SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop",
             message=SimpleNamespace(tool_calls=calls, content=None))])
         last = SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop",
             message=SimpleNamespace(tool_calls=None,
-                content='{"answer":"14 doors; assuming 2 knobs each, approximately 28 knobs."}'))])
+                content=content or '{"answer":"14 doors; assuming 2 knobs each, approximately 28 knobs."}'))])
         with patch.object(pipeline, "inspect_file", return_value=FileInfo(Path("a.ifc"), "ifc", ifc=Path("a.ifc"))), \
              patch.object(pipeline, "tools_for", return_value=[tool]), \
              patch.object(pipeline, "_describe", return_value="fixture"), \
@@ -106,6 +106,17 @@ class CompositionTests(unittest.TestCase):
         self.assertIn("28 knobs", result.answer.value)
         self.assertEqual(chat.call_count, 2)
         self.assertEqual(chat.call_args.kwargs["max_tokens"], 4096)
+
+    def test_text_answer_drops_measurement_unit_before_composition(self):
+        text = "图纸缺少房价信息，无法估价。已测得面积为 227.46 m²。"
+        for unit in ("m2", "count"):
+            with self.subTest(unit=unit):
+                result, _ = self.run_pipeline(
+                    [ToolCall("1", {"ifc_class": "IfcDoor", "answer_directly": False})],
+                    content=json.dumps({"answer": text, "unit": unit, "evidence": ["e1"]}),
+                )
+                self.assertEqual(result.to_json()["answer"]["value"], text)
+                self.assertIsNone(result.to_json()["answer"]["unit"])
 
     def test_multiple_tools_strip_direct_flag_even_after_first_false(self):
         result, chat = self.run_pipeline([
@@ -127,6 +138,22 @@ class CompositionTests(unittest.TestCase):
         self.assertIn("API unavailable", result.error)
         self.assertEqual(result.llm_calls, 1)
         self.assertEqual(result.cost_usd, .01)
+
+
+class AnswerParsingTests(unittest.TestCase):
+    def test_numeric_answers_keep_units(self):
+        for value, expected in ((227.46, 227.46), (0, 0), ("227.46", 227.46), ("1,234.50", 1234.5)):
+            with self.subTest(value=value):
+                parsed = parse_llm_answer(json.dumps({"answer": value, "unit": "m2"}))
+                self.assertEqual(parsed["answer"], expected)
+                self.assertEqual(parsed["unit"], "m2")
+
+    def test_non_numeric_answers_drop_units_and_preserve_content(self):
+        for value in ("无法估价", "", None, False, {"rooms": 4}, ["Bad", "Küche"]):
+            with self.subTest(value=value):
+                parsed = parse_llm_answer(json.dumps({"answer": value, "unit": "m2"}))
+                self.assertEqual(parsed["answer"], value)
+                self.assertIsNone(parsed["unit"])
 
 
 if __name__ == "__main__":
