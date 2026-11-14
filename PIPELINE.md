@@ -13,7 +13,7 @@ flowchart TD
 
     R["② 路由<br/>DeepSeek 选工具 + 填参数"] --> T{"工具类型"}
 
-    T -->|"终结工具<br/>ifc_count · ifc_sum_quantity · ifc_space_area<br/>dxf_count_symbols · dxf_room_area · dxf_total_area …"| D["③ 确定性计算<br/>答案 + 证据<br/>(GlobalId / DXF 句柄 / 文本位置)"]
+    T -->|"终结工具<br/>ifc_count · ifc_sum_quantity · ifc_space_area · ifc_space_breakdown<br/>dxf_count_symbols · dxf_room_area · dxf_total_area …"| D["③ 确定性计算<br/>答案 + 证据<br/>(GlobalId / DXF 句柄 / 文本位置)"]
     T -->|"信息工具<br/>ifc_list_elements · ifc_model_facts · dxf_room_list"| C1["④ DeepSeek 根据表格写答案"]
     T -->|"pdf_page_text<br/>(门窗表 / 做法表)"| C2["④ Kimi 根据表格写答案"]
     T -->|"没有合适工具"| V

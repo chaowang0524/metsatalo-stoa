@@ -151,7 +151,8 @@ def _quantity(path: str, e, quantity: str) -> tuple[float | None, str]:
     qtos = ue.get_psets(e, qtos_only=True)
     scale = _scales(path)[kind]
     for qset_name, qset in qtos.items():
-        if not qset_name or "Quantities" not in qset_name:
+        # Some exporters leave the quantity set unnamed (hitos); it still holds BaseQuantities.
+        if qset_name and "Quantities" not in qset_name:
             continue
         for k in keys:
             v = qset.get(k)
@@ -278,6 +279,94 @@ def ifc_model_facts(path: str) -> Answer:
         "spaces_sample": spaces,
     }
     return Answer(value=facts, method="IFC model overview", deterministic=True)
+
+
+def storey_names(path: str) -> list[str]:
+    """Storeys bottom to top, for the router prompt, so it can name the storey a
+    question means ("first floor" -> "1. Obergeschoss") without a wasted turn."""
+    f = open_ifc(path)
+    length = _scales(path)["length"]
+    storeys = sorted(f.by_type("IfcBuildingStorey"), key=lambda s: s.Elevation or 0)
+    return [
+        f"{s.Name} ({s.Elevation * length:+.2f} m)" if s.Elevation is not None else s.Name
+        for s in storeys
+    ]
+
+
+# Numbered copies of one function share a group: "Buero MuellerIII", "Buero Mueller
+# VI + VII", "Labor K1" -> "Buero Mueller", "Labor". Qualifiers in brackets stay:
+# "PC-areal (indre/ytre sone)" is its own group.
+_NUMBER_SUFFIX = re.compile(r"(?<=[a-zà-ÿ\s])(?:[\s+,&]*(?:[IVX]+|[A-Z]?\d+[a-z]?)(?![\w.]))+[\s+*]*$")
+
+
+def _function(space) -> str:
+    name = (space.LongName or space.Name or "").strip()
+    base = _NUMBER_SUFFIX.sub("", name).strip()
+    return base or name or "(unnamed)"
+
+
+def _storey_breakdown(path: str, storey, spaces: list, group: bool) -> tuple[list[str], list[Evidence], float]:
+    rows = []
+    for s in spaces:
+        v, _ = _quantity(path, s, "net_floor_area")
+        rows.append((s, v or 0.0))
+    total = sum(v for _, v in rows)
+    title = storey.Name + (f" ({storey.LongName})" if getattr(storey, "LongName", None) else "")
+    lines = [f"{title}: {len(rows)} spaces", f"Total area: {total:.1f} m2"]
+    if group:
+        groups: dict[str, list] = {}
+        for s, v in rows:
+            groups.setdefault(_function(s), []).append((s, v))
+        lines.append("Spaces by function (IfcSpace.LongName):")
+        for fn in sorted(groups, key=_norm):
+            members = groups[fn]
+            area = sum(v for _, v in members)
+            n = len(members)
+            lines.append(f"  {fn} ({n} space{'s' if n > 1 else ''}, {area:.1f} m2):")
+            lines += [f"    - {s.Name}: {v:.1f} m2" for s, v in members]
+    else:
+        lines.append("Spaces:")
+        lines += [
+            f"  - {s.Name}: {s.LongName or ''} ({v:.1f} m2)"
+            for s, v in sorted(rows, key=lambda r: -r[1])
+        ]
+    evidence = [Evidence(ref=s.GlobalId, label=_label(s), value=round(v, 2)) for s, v in rows]
+    return lines, evidence, total
+
+
+def ifc_space_breakdown(path: str, storey: str | None = None, group_by_function: bool = True) -> Answer:
+    """Spaces of one storey (or every storey) with their net floor areas, grouped by
+    function (the space's long name without a trailing roman numeral) or listed."""
+    f = open_ifc(path)
+    if storey:
+        targets = [_find_storey(f, storey)]
+    else:
+        targets = sorted(f.by_type("IfcBuildingStorey"), key=lambda s: s.Elevation or 0)
+    by_storey: dict = {t: [] for t in targets}
+    for s in _elements(path, "IfcSpace", None):
+        st = _storey_of(s)
+        if st in by_storey:
+            by_storey[st].append(s)
+    lines, evidence, total, n = [], [], 0.0, 0
+    for st, spaces in by_storey.items():
+        if not spaces:
+            continue
+        block, ev, t = _storey_breakdown(path, st, spaces, group_by_function)
+        lines += block + [""]
+        evidence += ev
+        total += t
+        n += len(spaces)
+    if not n:
+        raise ToolError("No IfcSpace found" + (f" on {storey!r}" if storey else ""))
+    if not storey:
+        lines.insert(0, f"Building: {n} spaces, total area {total:.1f} m2\n")
+    return Answer(
+        value="\n".join(lines).strip(),
+        unit=None,
+        method="IfcSpace net floor area per space, grouped by storey"
+        + (" and function (LongName)" if group_by_function else ""),
+        evidence=evidence,
+    )
 
 
 def _materials(e) -> list[str]:

@@ -117,6 +117,21 @@ TOOLS = [
         "ifc", ifc_tools.ifc_space_area,
     ),
     Tool(
+        "ifc_space_breakdown",
+        "ALL rooms (IfcSpace) of one storey, or of every storey, each with its net floor "
+        "area, plus counts and totals, grouped by function or listed. Use only when the "
+        "question wants every space: 'space breakdown', 'all spaces on level X with their "
+        "areas', 'spaces grouped by function'. If it asks about some rooms only (restrooms, "
+        "offices, the largest room), use ifc_list_elements with IfcSpace instead.",
+        {
+            "storey": _s(STOREY, True),
+            "group_by_function": {"type": "boolean", "_optional": True,
+                                  "description": "true (default): group rooms by function/name; "
+                                                 "false: one line per room, largest first"},
+        },
+        "ifc", ifc_tools.ifc_space_breakdown,
+    ),
+    Tool(
         "ifc_list_elements",
         "Table of elements of one IFC class (name, type, storey, materials, Pset_*Common "
         "properties such as IsExternal or FireRating, width/height, length, volume). "
@@ -191,6 +206,7 @@ Rules:
 - If one tool call computes the answer, make just that call. Prefer deterministic tools; use ask_vision_model only if nothing else fits.
 - For breakdowns or comparisons, call several tools in one turn, then combine their results.
 - Questions can be in any language. Keep quoted names (rooms, storeys, labels) exactly as written.
+- Storeys follow European numbering: the ground floor is level 0, "first floor"/"level 1" is the first storey above it (1. OG, OG1), "second floor" is OG2. Prefer a storey whose name carries that number; "basement"/"underground" is the storey named basement, Keller, kjeller or UG. Pass the storey name exactly as listed.
 - After an info tool (facts, room list, page text), work out the answer from its output and reply with JSON only:
   {{"answer": <number or short text>, "unit": <"count"|"m2"|"m3"|"m"|"ft2"|null>, "explanation": "<one sentence citing the rows or items used>", "evidence": [<ids such as "e3" of exactly the items your answer counts, sums or cites>]}}
   For counts and areas, "answer" must be a bare number. When a tool output ends with an evidence id list, cite ids from it; a count of N cites N ids."""
@@ -251,6 +267,18 @@ def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> An
     return tool.fn(_source_path(tool, info), **args)
 
 
+def _describe(info: FileInfo) -> str:
+    """The file line of the system prompt, plus the IFC storey names so the router
+    can map "first floor" or "basement" to a real storey on its first try."""
+    text = info.describe()
+    if info.ifc:
+        try:
+            text += "\nStoreys, bottom to top: " + "; ".join(ifc_tools.storey_names(str(info.ifc)))
+        except Exception:  # an unreadable model still gets the other tools' errors
+            pass
+    return text
+
+
 def _evidence_index(evs: list, start: int) -> str:
     """Short ids (e1, e2, ...) the composing LLM cites, so the UI can show only those."""
     lines = []
@@ -295,7 +323,7 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
         return res
 
     messages = [
-        {"role": "system", "content": SYSTEM.format(file=info.describe())},
+        {"role": "system", "content": SYSTEM.format(file=_describe(info))},
         {"role": "user", "content": question},
     ]
     specs = [t.spec() for t in tools]
