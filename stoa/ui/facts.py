@@ -582,3 +582,6 @@ if __name__ == "__main__":
     a = ap.parse_args()
     idx = build(a.source, a.limit)
     print(f"{len(idx)} drawings indexed in {OUT}/index.json")
+    from stoa.ui import library  # imports this module, so not at the top
+    library.LIBRARY.write_text(json.dumps(library.build(), ensure_ascii=False), encoding="utf-8")
+    print(f"symbol library rebuilt in {library.LIBRARY}")

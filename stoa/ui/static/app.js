@@ -9,6 +9,7 @@ const COLORS = {
   appliance: "#5c940d", sauna: "#a61e4d", fireplace: "#c92a2a", chimney: "#495057", answer: "#e8590c",
   stair: "#5f3dc4", wall: "#495057", column: "#862e9c", railing: "#868e96", furniture: "#a9743a",
   sanitary: "#0ca678", slab: "#adb5bd", member: "#a9743a", beam: "#862e9c",
+  stove: "#5c940d", fridge: "#5c940d", radiator: "#c2255c", drain: "#1098ad", socket: "#f08c00", light: "#fab005",
 };
 const color = (kind) => COLORS[kind] || "#e8590c";
 
@@ -19,6 +20,7 @@ const state = {
   pinned: null, hover: null, single: null, // fact ids / item key under the pointer
   adhoc: null, // an answer's evidence, shown like a fact
   addKind: null, // insert mode: the kind a tap on the plan adds
+  addLib: null, // ...and its symbol from the library: a variant id, "generic", or null for the plan's own
   sel: null, // id of the added object with resize / rotate handles
 };
 
@@ -170,6 +172,7 @@ async function loadDoc(id) {
   state.doc = doc; state.edits = doc.edits; state.history = [];
   state.pinned = state.hover = state.single = state.adhoc = state.addKind = state.sel = null;
   state.edits.added.forEach(normalise);
+  addedFacts();
   history.replaceState(null, "", `#${id}`);
   const v = doc.view;
   const bg = $("#bg");
@@ -443,13 +446,19 @@ function buildPalette() {
   box.replaceChildren();
   for (const f of components()) {
     const b = h("button", { type: "button" }, h("span", { className: "swatch", style: `background:${color(f.kind)}` }), kindName(f.kind).replace(/^./, (c) => c.toUpperCase()));
-    b.setAttribute("aria-pressed", state.addKind === f.kind);
-    b.onclick = () => arm(state.addKind === f.kind ? null : f.kind);
+    b.setAttribute("aria-pressed", state.addKind === f.kind && !state.addLib);
+    b.onclick = () => arm(state.addKind === f.kind && !state.addLib ? null : f.kind);
     box.append(b);
   }
-  const k = state.addKind;
+  const lb = h("button", { type: "button", className: "lib-btn", title: "Symbol library: windows, doors, fixtures and more from other drawings" }, "▦ Library…");
+  lb.setAttribute("aria-pressed", !!state.addLib);
+  lb.setAttribute("aria-expanded", libOpen());
+  lb.onclick = (e) => { e.stopPropagation(); toggleLib(); };
+  box.append(lb);
+  const k = state.addKind, v = state.addLib && state.addLib !== "generic" ? libVariant(state.addLib) : null;
+  const which = v ? ` (library, ${v.label})` : state.addLib ? " (standard symbol)" : "";
   $("#palette").classList.toggle("armed", !!k);
-  $("#palette-hint").textContent = k ? `Tap the plan to place a ${k} · Esc to stop` : "Tap the plan to add";
+  $("#palette-hint").textContent = k ? `Tap the plan to place a ${kindName(k)}${which} · Esc to stop` : "Tap the plan to add";
   $("#btn-undo").hidden = !state.history.length;
   svg.classList.toggle("adding", !!k);
   if (k) svg.style.setProperty("--add-cursor", addCursor(color(k)));
@@ -457,8 +466,8 @@ function buildPalette() {
 
 // Insert mode stays on until the kind is tapped again or Esc, so several can be placed in a row.
 // Pinning the kind's fact shows what's already detected, so the engineer adds only what's missing.
-function arm(kind) {
-  state.addKind = kind;
+function arm(kind, lib = null) {
+  state.addKind = kind; state.addLib = kind ? lib : null;
   if (kind) { state.pinned = components().find((f) => f.kind === kind)?.id ?? state.pinned; state.single = null; }
   buildPalette(); renderFacts();
 }
@@ -466,14 +475,84 @@ function arm(kind) {
 function commit(mutate) {
   state.history.push(JSON.stringify(state.edits));
   mutate(state.edits);
-  buildPalette(); renderFacts(); saveEdits();
+  addedFacts(); buildPalette(); renderFacts(); saveEdits();
 }
 function undo() {
   if (!state.history.length) return toast("Nothing to undo");
   state.edits = JSON.parse(state.history.pop());
   if (!selected()) state.sel = null;
-  buildPalette(); renderFacts(); saveEdits();
+  addedFacts(); buildPalette(); renderFacts(); saveEdits();
 }
+
+// A kind added from the library that the plan has none of gets its own (initially empty) count,
+// so it is listed, highlighted and priced like the detected kinds.
+function addedFacts() {
+  const kinds = new Set(state.edits.added.map((a) => a.kind));
+  state.doc.facts = state.doc.facts.filter((f) => !f.fromLibrary || kinds.has(f.kind));
+  const have = new Set(components().map((f) => f.kind));
+  const at = state.doc.facts.findLastIndex((f) => f.group === "Components") + 1;
+  const extra = [...kinds].filter((k) => !have.has(k)).map((k) => ({
+    id: `added:${k}`, group: "Components", kind: k, label: `${kindName(k).replace(/^./, (c) => c.toUpperCase())}s`,
+    value: 0, unit: "count", items: [], deterministic: true, fromLibrary: true,
+    method: "Not on the drawing: placed by the engineer from the symbol library" }));
+  state.doc.facts.splice(at, 0, ...extra);
+}
+
+// ---------- symbol library: real symbols from other drawings, plus standard plan symbols ----------
+let library = { kinds: {} };
+fetch("/api/library").then((r) => r.json()).then((l) => { library = l; if (state.doc) renderFacts(); }).catch(() => {});
+function libVariant(id) {
+  for (const vs of Object.values(library.kinds)) {
+    const v = vs.find((x) => x.id === id);
+    if (v) return { ...v, ref: v.id, shape: { bbox: v.bbox } };
+  }
+  return null;
+}
+const libOpen = () => !$("#lib-pop").hidden;
+function toggleLib(open = !libOpen()) {
+  $("#lib-pop").hidden = !open;
+  if (open) renderLib();
+  $("#palette .lib-btn")?.setAttribute("aria-expanded", open);
+}
+// A thumbnail of a symbol: its own geometry fitted into a square, in the kind's colour.
+function thumb(kind, markup, box) {
+  const [x0, y0, x1, y1] = box, w = x1 - x0 || 1, hh = y1 - y0 || 1, pad = Math.max(w, hh) * 0.08;
+  const s = el("svg", { viewBox: `${x0 - pad} ${y0 - pad} ${w + 2 * pad} ${hh + 2 * pad}`, width: 52, height: 52 });
+  const g = el("g", { fill: "none", stroke: color(kind), color: color(kind) }, s);
+  g.innerHTML = markup;
+  for (const n of g.querySelectorAll("path, rect, circle, ellipse, polygon, line"))
+    Object.entries({ "vector-effect": "non-scaling-stroke", "stroke-width": 1.5, fill: "none", stroke: color(kind) })
+      .forEach(([k, v]) => n.setAttribute(k, v));
+  return s;
+}
+function renderLib() {
+  const pop = $("#lib-pop");
+  const kinds = [...new Set([...Object.keys(library.kinds), ...Object.keys(GENERIC)])]
+    .sort((a, b) => kindName(a).localeCompare(kindName(b)));
+  pop.replaceChildren(h("div", { className: "head" }, h("strong", { textContent: "Symbol library" }),
+    h("span", { className: "muted", textContent: "pick a symbol, then tap the plan" })));
+  for (const k of kinds) {
+    const row = h("div", { className: "lib-row" });
+    const pick = (lib, title, svgEl) => {
+      const b = h("button", { type: "button", title }, svgEl);
+      b.setAttribute("aria-pressed", state.addKind === k && state.addLib === lib);
+      b.onclick = () => { arm(k, lib); toggleLib(false); };
+      row.append(b);
+    };
+    for (const v of library.kinds[k] || [])
+      pick(v.id, `${kindName(k)} ${v.label} · from ${v.source} (${v.n} like it)`, thumb(k, v.sym, v.bbox));
+    const [size, mk] = GENERIC[k] || GENERIC_BOX;
+    pick("generic", `${kindName(k)}, standard symbol ${size[0]} × ${size[1]} m`, thumb(k, mk, [0, 0, 100, 100]));
+    pop.append(h("div", { className: "lib-kind" },
+      h("div", { className: "lib-name" }, h("span", { className: "swatch", style: `background:${color(k)}` }),
+        kindName(k).replace(/^./, (c) => c.toUpperCase())), row));
+  }
+  pop.append(h("p", { className: "note", textContent:
+    "Real symbols are copied from the Swiss Dwellings CAD plans (CC BY 4.0, Archilyse AG) and the IFC model plans, stamped at their real size." }));
+}
+document.addEventListener("pointerdown", (e) => {
+  if (libOpen() && !e.target.closest?.("#lib-pop, .lib-btn")) toggleLib(false);
+});
 $("#btn-undo").onclick = undo;
 let saveT;
 function saveEdits() {
@@ -502,6 +581,14 @@ const GENERIC = {
   chimney: [[0.5, 0.5], '<rect x="0" y="0" width="100" height="100"/><rect x="25" y="25" width="50" height="50"/>'],
   stair: [[1.0, 3.0], '<rect x="0" y="0" width="100" height="100"/><path d="M0 12H100M0 25H100M0 37H100M0 50H100M0 62H100M0 75H100M0 87H100M50 95V5M42 15L50 5L58 15"/>'],
   railing: [[1.5, 0.1], '<path d="M0 50H100M0 0V100M50 0V100M100 0V100"/>'],
+  sink: [[0.8, 0.5], '<rect x="0" y="0" width="100" height="100"/><rect x="10" y="15" width="50" height="70" rx="8"/><circle cx="80" cy="50" r="6"/>'],
+  stove: [[0.6, 0.6], '<rect x="0" y="0" width="100" height="100"/><circle cx="28" cy="28" r="15"/><circle cx="72" cy="28" r="15"/><circle cx="28" cy="72" r="15"/><circle cx="72" cy="72" r="15"/>'],
+  fridge: [[0.6, 0.65], '<rect x="0" y="0" width="100" height="100"/><path d="M0 80H100"/><text x="50" y="55" font-size="34" text-anchor="middle" stroke="none" fill="currentColor">R</text>'],
+  column: [[0.3, 0.3], '<rect x="0" y="0" width="100" height="100"/><path d="M0 0L100 100M100 0L0 100"/>'],
+  radiator: [[1.0, 0.1], '<rect x="0" y="0" width="100" height="100"/><path d="M10 0V100M20 0V100M30 0V100M40 0V100M50 0V100M60 0V100M70 0V100M80 0V100M90 0V100"/>'],
+  drain: [[0.2, 0.2], '<rect x="0" y="0" width="100" height="100"/><circle cx="50" cy="50" r="30"/><path d="M30 50H70M50 30V70"/>'],
+  socket: [[0.25, 0.25], '<circle cx="50" cy="50" r="45"/><path d="M5 50H95M30 20V50M70 20V50"/>'],
+  light: [[0.3, 0.3], '<circle cx="50" cy="50" r="45"/><path d="M18 18L82 82M82 18L18 82"/>'],
 };
 const GENERIC_BOX = [[0.6, 0.6], '<rect x="0" y="0" width="100" height="100"/><path d="M0 0L100 100M100 0L0 100"/>'];
 const RASTER = () => /\.(png|jpe?g)$/i.test(state.doc.view.background);
@@ -511,7 +598,10 @@ function templates(kind) {
   const items = components().find((f) => f.kind === kind)?.items || [];
   return items.filter((it) => it.sym || (RASTER() && it.shape.bbox));
 }
-function tplOf(a) { return a.tpl ? templates(a.kind).find((it) => it.ref === a.tpl) : null; }
+function tplOf(a) {
+  if (a.lib) return libVariant(a.lib);
+  return a.tpl ? templates(a.kind).find((it) => it.ref === a.tpl) : null;
+}
 function nearestTpl(kind, x, y) {
   let best = null, d = Infinity;
   for (const it of templates(kind)) {
@@ -563,7 +653,7 @@ function stampEl(a, parent) {
   el("rect", { x: -a.w / 2, y: -a.h / 2, width: a.w, height: a.h, fill: c, "fill-opacity": 0.12, stroke: c,
     "stroke-width": 1.5, "stroke-dasharray": "6 3", "vector-effect": "non-scaling-stroke", "data-added": a.id }, g);
   const it = tplOf(a), f = a.flip ? -1 : 1;
-  const sym = el("g", { fill: "none", stroke: c, "pointer-events": "none" }, g);
+  const sym = el("g", { fill: "none", stroke: c, color: c, "pointer-events": "none" }, g);
   if (it) {
     const b = bboxOf(it.shape), tw = b[2] - b[0] || 1, th = b[3] - b[1] || 1;
     sym.setAttribute("transform", `scale(${f * a.w / tw} ${a.h / th}) translate(${-(b[0] + b[2]) / 2} ${-(b[1] + b[3]) / 2})`);
@@ -591,15 +681,20 @@ function onPlanClick(e) {
   const kind = state.addKind;
   if (!kind) { if (state.sel) select(null); return; }
   const p = toView(e.clientX, e.clientY);
-  const it = nearestTpl(kind, p.x, p.y);
+  // A library pick is stamped at its real-world size; otherwise copy the nearest instance on this plan.
+  const lib = state.addLib && state.addLib !== "generic" ? libVariant(state.addLib) : null;
+  const it = state.addLib ? null : nearestTpl(kind, p.x, p.y);
   let w, hh;
-  if (it) { const b = bboxOf(it.shape); [w, hh] = [b[2] - b[0], b[3] - b[1]]; }
+  if (lib) [w, hh] = lib.size_m.map((m) => m * unitsPerM());
+  else if (it) { const b = bboxOf(it.shape); [w, hh] = [b[2] - b[0], b[3] - b[1]]; }
   else [w, hh] = (GENERIC[kind] || GENERIC_BOX)[0].map((m) => m * unitsPerM());
-  const a = { id: `add-${Date.now()}`, kind, cx: p.x, cy: p.y, w, h: hh, rot: 0, flip: false, tpl: it?.ref ?? null };
+  const a = { id: `add-${Date.now()}`, kind, cx: p.x, cy: p.y, w, h: hh, rot: 0, flip: false, tpl: it?.ref ?? null,
+    ...(lib && { lib: lib.id }) };
   updateBBox(a);
   commit((ed) => ed.added.push(a));
   select(a.id);
-  toast(`Added 1 ${kindName(kind)}${it ? ", copied from the plan" : ""} · drag the corners to resize, the top circle to rotate`, 4000);
+  const from = lib ? ", from the library" : it ? ", copied from the plan" : "";
+  toast(`Added 1 ${kindName(kind)}${from} · drag the corners to resize, the top circle to rotate`, 4000);
 }
 
 // ---------- selection: drag to move, corner circles to resize, top circle to rotate ----------
@@ -1147,6 +1242,7 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (menu) return closeMenu();
     if (costOpen()) return toggleCost(false);
+    if (libOpen()) return toggleLib(false);
     if (state.addKind) return arm(null); // stop adding first; the next Esc drops the selection
     if (state.sel) return select(null);
     if (state.pinned) { state.pinned = null; renderFacts(); }
