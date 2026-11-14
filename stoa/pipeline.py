@@ -20,7 +20,7 @@ from typing import Callable
 from stoa import verda
 from stoa.answer import Answer, ToolError, parse_llm_answer
 from stoa.inspect_file import FileInfo, inspect_file
-from stoa.tools import dxf_tools, ifc_tools, pdf_tables, pdf_tools, vision_tools
+from stoa.tools import dxf_tools, ifc_tools, mep_tools, pdf_tables, pdf_tools, vision_tools
 
 MAX_TURNS = 4
 MAX_EVIDENCE_IDS = 300  # per tool output, so a huge element table can't blow up the prompt
@@ -159,6 +159,30 @@ TOOLS = [
             "only": _s("Return the number for this group only (group label as listed)", True),
         },
         "ifc", ifc_tools.ifc_group_quantity,
+    ),
+    Tool(
+        "ifc_piping",
+        "Piping / plumbing in the BIM model: pipe segments (count and length in m), "
+        "fittings (elbows, tees), valves, sanitary fixtures (with water fixture units) "
+        "and pumps, grouped by system (sanitary/waste, domestic hot water, domestic cold "
+        "water, storm, hydronic), pipe size (diameter), material, storey or type. "
+        "what='all' gives a per-system overview. Filter with system/size/storey; set "
+        "`only` to get one group's number (e.g. length of 15 mm hot-water pipe: "
+        "what='pipe', group_by ['size'], system 'hot water', only '15 mm'; number of elbows: "
+        "what='fitting', group_by ['type'], only 'elbow'). When the question asks for one number, "
+        "always set `only`.",
+        {
+            "what": _s("Element kind", True, enum=mep_tools.WHAT),
+            "group_by": {"type": "array", "_optional": True,
+                         "items": {"type": "string", "enum": mep_tools.GROUP_KEYS},
+                         "description": "Grouping keys, nested in order. Default ['system']. "
+                                        "system_name keeps numbered systems apart (Sanitary 1, Sanitary 2)."},
+            "system": _s("Keep only systems whose name contains this, e.g. 'hot water', 'sanitary'", True),
+            "size": _s("Keep only this pipe size, e.g. '50 mm'", True),
+            "storey": _s(STOREY, True),
+            "only": _s("Return the number for this group only (group label as listed)", True),
+        },
+        "ifc", mep_tools.ifc_piping,
     ),
     Tool(
         "ifc_space_area",
@@ -381,6 +405,8 @@ def _describe(info: FileInfo) -> str:
     if info.ifc:
         try:
             text += "\nStoreys, bottom to top: " + "; ".join(ifc_tools.storey_names(str(info.ifc)))
+            if piping := mep_tools.piping_summary(str(info.ifc)):
+                text += "\n" + piping
         except Exception:  # an unreadable model still gets the other tools' errors
             pass
     if info.path.suffix.lower() == ".pdf" and _has_tables(info):

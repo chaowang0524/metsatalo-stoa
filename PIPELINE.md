@@ -107,6 +107,17 @@ CubiCasa 中以 `How many` / `Kuinka monta` 开头的计数题会先辨认住宅
 - 配筋：报告名称含 Bewehrung / Reinforcement / Rebar 的属性，并统计 `IfcReinforcingBar` 的数量。预览数据里没有真正的钢筋数据，只有保护层（c=2.0cm）这类属性，答案里会如实说明。
 - ifc_bench 同 40 题（seed 0）：文字题得分 51.2% → 63.7%，确定性答案占比 0% → 50%，成本基本不变（每 1000 题 $1.60 → $1.63）。
 
+### 管道：`ifc_piping`（`stoa/tools/mep_tools.py`）
+
+统计管段（数量、长度）、管件、阀门、卫生器具和水泵，可按系统、管径、材料、楼层或类型分组；`what='all'` 时给出各系统的概况。IFC4 的 `IfcPipeSegment` 等类型和 IFC2X3 的 `IfcFlowSegment` 加类型对象两种写法都支持。
+
+- 系统归属：先看 IfcSystem 分配，再看 Revit Pset `Mechanical."System Type"`。不用 `System Classification`：clinic 模型里有 999 个热水管件被标成了冷水，端口连接关系证明它们接在热水管上。
+- 管长：依次取 Qto → `Dimensions.Length` → 几何包围盒最长边（含竖直方向，立管也能算进去）。
+- 楼层：先取 Revit 的 `Constraints.Level`，再看空间包含关系。原因是 Revit 把 1359 个管件挂到了基础层上。
+- 卫生器具当量：热水组用 HWFU，冷水组用 CWFU，其余分组用 WFU。
+- 有管道的模型会在路由提示里加一行管道概况。clinic 模型的 7 道测试题都在一次路由内答对，每题约 $0.0005。
+- UI：`stoa.ui.facts` 用模型几何为每层生成一张管道平面图，按系统着色，每个构件按 GlobalId 都能点选，问答证据直接高亮（`ifc_models/bsc-clinic_clinic-plumbing_piping-level-1/2`）。
+
 ## 模型配置与评测
 
 ### CubiCasa 同题对照

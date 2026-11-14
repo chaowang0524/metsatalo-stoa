@@ -356,6 +356,125 @@ def ifc_facts(svg: Path) -> dict | None:
     }
 
 
+# ---- piping plans generated from an MEP model -------------------------------
+
+PIPE_COLORS = {  # system (number stripped) -> stroke colour
+    "Domestic Cold Water": "#1f77b4", "Domestic Hot Water": "#d62728", "Sanitary": "#8c564b",
+    "Storm": "#2ca02c", "Hydronic Supply": "#ff7f0e", "Hydronic Return": "#9467bd",
+}
+PIPE_SCALE = 100  # view units per metre (1 unit = 1 cm), like the DXF plans
+PIPE_MARGIN = 1.0  # metres
+
+
+def _world_vertices(path: str) -> dict[int, list[tuple[float, float, float]]]:
+    """Tessellate the piping elements once, in world coordinates (metres)."""
+    import multiprocessing
+
+    import ifcopenshell.geom
+
+    from stoa.tools import mep_tools
+    f = ifc_tools.open_ifc(path)
+    elems = [e for k in mep_tools.KINDS for e in mep_tools._elements(path, k)]
+    settings = ifcopenshell.geom.settings()
+    settings.set("use-world-coords", True)
+    it = ifcopenshell.geom.iterator(settings, f, multiprocessing.cpu_count(), include=elems)
+    out = {}
+    if it.initialize():
+        while True:
+            sh = it.get()
+            v = sh.geometry.verts
+            out[sh.id] = [(v[i], v[i + 1], v[i + 2]) for i in range(0, len(v), 3)]
+            if not it.next():
+                break
+    return out
+
+
+def piping_facts(ifc_path: Path) -> list[dict]:
+    """One plan per storey: pipes drawn from the model geometry, coloured by system,
+    with fixtures, valves and fittings as outlines. Every element is a fact item
+    keyed by GlobalId, so pipeline answers about the model highlight on the plan."""
+    from stoa.tools import mep_tools
+    path = str(ifc_path)
+    if not mep_tools.piping_summary(path):
+        return []
+    verts = _world_vertices(path)
+    by_storey: dict[str, list] = {}
+    for kind in mep_tools.KINDS:
+        for e in mep_tools._elements(path, kind):
+            if e.id() in verts and (st := mep_tools.storey_name(e)):
+                by_storey.setdefault(st, []).append((kind, e))
+    # A storey with a handful of stray elements (the footing) isn't a plan of its
+    # own; draw them on the lowest real plan instead.
+    elev = {s.Name: s.Elevation or 0 for s in ifc_tools.open_ifc(path).by_type("IfcBuildingStorey")}
+    plans = sorted((n for n, m in by_storey.items() if sum(k == "pipe" for k, _ in m) >= 10),
+                   key=lambda n: elev.get(n, 0))
+    if not plans:
+        return []
+    for n in [n for n in by_storey if n not in plans]:
+        by_storey[plans[0]] += by_storey.pop(n)
+    docs = []
+    for storey, members in by_storey.items():
+        xs = [x for _, e in members for x, _, _ in verts[e.id()]]
+        ys = [y for _, e in members for _, y, _ in verts[e.id()]]
+        x0, y1 = min(xs) - PIPE_MARGIN, max(ys) + PIPE_MARGIN
+        w, h = (max(xs) - min(xs) + 2 * PIPE_MARGIN) * PIPE_SCALE, (y1 - min(ys) + PIPE_MARGIN) * PIPE_SCALE
+
+        def v(x, y):
+            return [round((x - x0) * PIPE_SCALE, 1), round((y1 - y) * PIPE_SCALE, 1)]
+
+        draw = {"fixture": [], "valve": [], "fitting": [], "pipe": [], "pump": []}
+        items: dict[str, list] = {}
+        for kind, e in members:
+            hull = [v(*p) for p in _hull([(x, y) for x, y, _ in verts[e.id()]])]
+            if len(hull) < 3:
+                continue
+            system = mep_tools._system(mep_tools.system_names(e)[0])
+            color = PIPE_COLORS.get(system, "#555")
+            pts = " ".join(f"{x},{y}" for x, y in hull)
+            if kind == "pipe":
+                draw["pipe"].append(f'<polygon points="{pts}" fill="{color}" stroke="{color}" stroke-width="2"/>')
+            elif kind == "fixture":
+                draw["fixture"].append(f'<polygon points="{pts}" fill="#f2f2f2" stroke="#444" stroke-width="2"/>')
+            else:
+                draw[kind].append(f'<polygon points="{pts}" fill="none" stroke="{color}" stroke-width="1.5"/>')
+            length = mep_tools._length(path, e)[0] if kind == "pipe" else None
+            label = f"{system} · {mep_tools._size(path, e)}" if kind == "pipe" else f"{ifc_tools._label(e)} ({system})"
+            item = {"ref": e.GlobalId, "label": label, "shape": {"poly": hull}}
+            if length:
+                item["value"] = round(length, 3)
+            items.setdefault((kind, system if kind == "pipe" else None), []).append(item)
+
+        legend = "".join(
+            f'<g transform="translate(40 {60 + 50 * i})"><rect width="60" height="14" fill="{c}"/>'
+            f'<text x="75" y="14" font-size="36" font-family="sans-serif">{n}</text></g>'
+            for i, (n, c) in enumerate(PIPE_COLORS.items()))
+        body = "".join("".join(draw[k]) for k in ("fixture", "pipe", "fitting", "valve", "pump"))
+        stem = f"{ifc_path.stem}_piping-{re.sub(r'[^a-z0-9]+', '-', storey.lower()).strip('-')}"
+        svg_path = OUT / "ifc_models" / f"{stem}.svg"
+        svg_path.parent.mkdir(parents=True, exist_ok=True)
+        svg_path.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w:.0f} {h:.0f}">'
+                            f'<rect width="100%" height="100%" fill="white"/>{body}{legend}</svg>')
+
+        method = f"IFC piping on storey {storey!r} of {ifc_path.name}, drawn from the model geometry"
+        facts = []
+        for (kind, system), its in sorted(items.items(), key=lambda kv: (kv[0][0] != "pipe", -len(kv[1]))):
+            if kind == "pipe":
+                total = round(sum(i.get("value", 0) for i in its), 2)
+                facts.append(_fact(f"pipe:{system}", "Pipe length by system", f"{system} pipe", its,
+                                   unit="m", value=total, method=method + "; lengths from "
+                                   + mep_tools._length(path, members[0][1])[1], kind="pipe"))
+            else:
+                facts.append(_fact(kind, "Components", f"{kind.capitalize()}s", its, method=method))
+        docs.append({
+            "id": f"ifc_models/{stem}", "source": "ifc_models", "file": ifc_path.name,
+            "credit": CREDITS["ifc_models"], "storey": storey, "ifc": ifc_path.name,
+            "view": {"width": round(w, 1), "height": round(h, 1),
+                     "background": f"/facts/ifc_models/{stem}.svg", "units_per_m": PIPE_SCALE},
+            "facts": facts,
+        })
+    return docs
+
+
 ICON_LABELS = {  # CubiCasa class -> (fact id, plural label)
     "Window": ("window", "Windows"), "Door": ("door", "Doors"), "Toilet": ("toilet", "Toilets"),
     "Sink": ("sink", "Sinks"), "Bathtub": ("bathtub", "Bathtubs"), "Sauna Bench": ("sauna", "Sauna benches"),
@@ -403,8 +522,23 @@ def build(source: str | None = None, limit: int | None = None) -> list[dict]:
         jobs += [("swiss_dwellings", p) for p in sorted((DATA / "swiss_dwellings").glob("*.dxf"))[:limit]]
     if source in (None, "cubicasa5k"):
         jobs += [("cubicasa5k", p) for p in sorted((DATA / "cubicasa5k").glob("*.png"))[:limit]]
+    if source in (None, "ifc_models"):
+        jobs += [("piping", p) for p in sorted((DATA / "ifc_models").glob("*.ifc"))]
     index = []
     for src, p in jobs:
+        if src == "piping":
+            # One IFC can yield several storey plans.
+            try:
+                docs = piping_facts(p)
+            except Exception as e:
+                print(f"skip piping {p.name}: {type(e).__name__}: {e}")
+                continue
+            for doc in docs:
+                stem = doc["id"].split("/", 1)[1]
+                (OUT / "ifc_models" / f"{stem}.json").write_text(json.dumps(doc, ensure_ascii=False))
+                summary = {f["id"]: f["value"] for f in doc["facts"]}
+                index.append({"id": doc["id"], "source": "ifc_models", "file": doc["file"], "summary": summary})
+            continue
         try:
             doc = {"swiss_dwellings": swiss_facts, "ifc_models": ifc_facts, "cubicasa5k": cubicasa_facts}[src](p)
         except Exception as e:  # one bad drawing shouldn't stop the batch
