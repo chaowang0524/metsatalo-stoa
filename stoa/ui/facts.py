@@ -89,44 +89,53 @@ def _path(points, closed) -> str:
     return d + (" Z" if closed else "")
 
 
-def dxf_to_svg(msp, frame: Frame) -> str:
-    """Plain SVG of the plan; the drawing set uses only these entity types."""
-    parts = []
-    for e in msp:
-        layer, t = e.dxf.layer, e.dxftype()
+def entity_svg(e, frame: Frame, style: str | None = None) -> str:
+    """One DXF entity as SVG markup in view units; style=None uses the layer's style.
+    The drawing set uses only these entity types."""
+    layer, t = e.dxf.layer, e.dxftype()
+    styled = style is None
+    if styled:
         style = LAYER_STYLE.get(layer, 'fill="none" stroke="#888" stroke-width="1"')
-        if t == "LWPOLYLINE":
-            pts = [frame.pt(x, y) for x, y in e.get_points("xy")]
-            parts.append(f'<path d="{_path(pts, e.closed)}" {style}/>')
-        elif t == "HATCH":
-            for p in e.paths:
-                verts = getattr(p, "vertices", None)
-                if verts:
-                    pts = [frame.pt(v[0], v[1]) for v in verts]
-                    parts.append(f'<path d="{_path(pts, True)}" fill="#2b2b2b" stroke="none"/>')
-        elif t == "CIRCLE":
-            (cx, cy), r = frame.pt(e.dxf.center.x, e.dxf.center.y), e.dxf.radius * SCALE
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r:.1f}" {style}/>')
-        elif t == "ARC":
-            c, r = e.dxf.center, e.dxf.radius
-            a0, a1 = math.radians(e.dxf.start_angle), math.radians(e.dxf.end_angle)
-            p0 = frame.pt(c.x + r * math.cos(a0), c.y + r * math.sin(a0))
-            p1 = frame.pt(c.x + r * math.cos(a1), c.y + r * math.sin(a1))
-            sweep = (e.dxf.end_angle - e.dxf.start_angle) % 360
-            # y flips, so a counter-clockwise DXF arc is clockwise in SVG (sweep flag 0).
-            parts.append(f'<path d="M{p0[0]},{p0[1]} A{r * SCALE:.1f},{r * SCALE:.1f} 0 '
-                         f'{int(sweep > 180)} 0 {p1[0]},{p1[1]}" {style}/>')
-        elif t == "TEXT":
-            x, y = frame.pt(*dxf_tools._text_point(e).coords[0])
-            h = max(e.dxf.height * SCALE, 8)
-            txt = (e.dxf.text.replace("&", "&amp;").replace("<", "&lt;"))
-            anchor = ("start", "middle", "end")[min(e.dxf.get("halign", 0), 2)] if e.dxf.get("halign", 0) < 3 else "middle"
-            base = "middle" if e.dxf.get("valign", 0) == 2 else "auto"
-            parts.append(f'<text x="{x}" y="{y}" font-size="{h:.1f}" text-anchor="{anchor}" '
-                         f'dominant-baseline="{base}" fill="#333" font-family="Helvetica, Arial">{txt}</text>')
+    if t == "LWPOLYLINE":
+        pts = [frame.pt(x, y) for x, y in e.get_points("xy")]
+        return f'<path d="{_path(pts, e.closed)}" {style}/>'
+    if t == "HATCH":
+        fill = 'fill="#2b2b2b" stroke="none"' if styled else style
+        return "".join(f'<path d="{_path([frame.pt(v[0], v[1]) for v in verts], True)}" {fill}/>'
+                       for p in e.paths if (verts := getattr(p, "vertices", None)))
+    if t == "CIRCLE":
+        (cx, cy), r = frame.pt(e.dxf.center.x, e.dxf.center.y), e.dxf.radius * SCALE
+        return f'<circle cx="{cx}" cy="{cy}" r="{r:.1f}" {style}/>'
+    if t == "ARC":
+        c, r = e.dxf.center, e.dxf.radius
+        a0, a1 = math.radians(e.dxf.start_angle), math.radians(e.dxf.end_angle)
+        p0 = frame.pt(c.x + r * math.cos(a0), c.y + r * math.sin(a0))
+        p1 = frame.pt(c.x + r * math.cos(a1), c.y + r * math.sin(a1))
+        sweep = (e.dxf.end_angle - e.dxf.start_angle) % 360
+        # y flips, so a counter-clockwise DXF arc is clockwise in SVG (sweep flag 0).
+        return (f'<path d="M{p0[0]},{p0[1]} A{r * SCALE:.1f},{r * SCALE:.1f} 0 '
+                f'{int(sweep > 180)} 0 {p1[0]},{p1[1]}" {style}/>')
+    if t == "TEXT":
+        x, y = frame.pt(*dxf_tools._text_point(e).coords[0])
+        h = max(e.dxf.height * SCALE, 8)
+        txt = (e.dxf.text.replace("&", "&amp;").replace("<", "&lt;"))
+        anchor = ("start", "middle", "end")[min(e.dxf.get("halign", 0), 2)] if e.dxf.get("halign", 0) < 3 else "middle"
+        base = "middle" if e.dxf.get("valign", 0) == 2 else "auto"
+        return (f'<text x="{x}" y="{y}" font-size="{h:.1f}" text-anchor="{anchor}" '
+                f'dominant-baseline="{base}" fill="#333" font-family="Helvetica, Arial">{txt}</text>')
+    return ""
+
+
+def dxf_to_svg(msp, frame: Frame) -> str:
+    """Plain SVG of the plan."""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {frame.width} {frame.height}" '
             f'width="{frame.width}" height="{frame.height}">'
-            f'<rect width="100%" height="100%" fill="#fff"/>' + "".join(parts) + "</svg>")
+            f'<rect width="100%" height="100%" fill="#fff"/>' + "".join(entity_svg(e, frame) for e in msp) + "</svg>")
+
+
+def _symbol(entities, frame: Frame) -> str:
+    """Bare geometry of a symbol (no styling), so the UI can stamp a copy of it elsewhere."""
+    return "".join(entity_svg(e, frame, style="") for e in entities if e.dxftype() != "TEXT")
 
 
 # ---- facts -------------------------------------------------------------------
@@ -150,13 +159,15 @@ def swiss_facts(dxf_path: Path) -> dict:
     svg_path.write_text(dxf_to_svg(msp, frame))
 
     def ent(e, label):
-        return {"ref": e.dxf.handle, "label": label, "shape": {"bbox": frame.bbox(dxf_tools._bounds(e))}}
+        return {"ref": e.dxf.handle, "label": label, "shape": {"bbox": frame.bbox(dxf_tools._bounds(e))},
+                "sym": _symbol([e], frame)}
 
     facts = []
     symbols = [
         ("window", "Windows", [
             {"ref": ",".join(e.dxf.handle for e in g), "label": "window",
-             "shape": {"bbox": frame.bbox(dxf_tools._union([dxf_tools._bounds(e) for e in g]))}}
+             "shape": {"bbox": frame.bbox(dxf_tools._union([dxf_tools._bounds(e) for e in g]))},
+             "sym": _symbol(g, frame)}
             for g in plan.windows]),
         ("door", "Doors", [ent(e, "door") for e in plan.doors]),
         ("toilet", "Toilets", [ent(e, "toilet") for e in plan.toilets]),
@@ -267,6 +278,7 @@ def ifc_facts(svg: Path) -> dict | None:
 
     shapes: dict[str, tuple[str, dict]] = {}  # guid -> (class, shape)
     names: dict[str, str] = {}
+    syms: dict[str, str] = {}  # guid -> bare path geometry in view units, for stamping copies
     for g in root.iter("{http://www.w3.org/2000/svg}g"):
         guid, cls = g.get("data-guid"), g.get("class")
         if not guid or not cls:
@@ -275,6 +287,9 @@ def ifc_facts(svg: Path) -> dict | None:
         pts = [p for path in g.iterfind(".//s:path", SVG_NS) for p in _svg_points(path.get("d", ""))]
         if not pts:
             continue
+        if cls in IFC_KINDS:
+            ds = "".join(f'<path d="{path.get("d")}"/>' for path in g.iterfind(".//s:path", SVG_NS))
+            syms[guid] = f'<g transform="scale({IFC_SCALE}) translate({-vx} {-vy})">{ds}</g>'
         hull = pts if cls == "IfcSpace" else _hull(pts)
         if len(hull) >= 3:
             shape = {"poly": [pt(*p) for p in hull]}
@@ -306,7 +321,8 @@ def ifc_facts(svg: Path) -> dict | None:
         fid, label, group = IFC_KINDS[cls]
         for guid, shape in members:
             name = ifc_tools._label(e) if (e := entity(guid)) else names[guid]
-            by_kind.setdefault((fid, label, group), []).append({"ref": guid, "label": name, "shape": shape})
+            by_kind.setdefault((fid, label, group), []).append(
+                {"ref": guid, "label": name, "shape": shape, **({"sym": syms[guid]} if group == "Components" else {})})
     method = (f"IFC elements drawn on this plan, matched to {ifc.name} by GlobalId" if ifc
               else "elements tagged in the plan SVG (source IFC not in the dataset)")
     for (fid, label, group), items in by_kind.items():
