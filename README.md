@@ -1,119 +1,144 @@
 # Stoa: verifiable answers about construction drawings
 
-Current pipeline (flowchart): `PIPELINE.md`. Verda rules: `VERDA_ENDPOINT_GUIDELINES.md`. Challenge briefs: `challenge.md`, `side_quest.md`. UI concept: `UI_IDEA.md`.
+Ask a question about a drawing or BIM model in natural language. The answer
+comes with the evidence it was computed from (IFC `GlobalId`, DXF entity
+handle, PDF table row), so an onsite engineer can check it on the plan in
+seconds. Deterministic extraction comes first; vision models are used only
+where there is no vector or BIM data.
 
-## Run
+Pipeline flowchart: `PIPELINE.md`. Endpoint decisions and experiment log:
+`VERDA_LOG.md`. Remaining gaps, ranked by lost questions: `GAPS.md`. Challenge
+briefs: `challenge.md`, `side_quest.md`. Verda rules: `VERDA_ENDPOINT_GUIDELINES.md`.
 
-Install the main pipeline dependencies into `.venv` with `uv sync` (Python 3.13).
-Copy `.env.example` to `.env` and fill in the Verda URL and API keys. The default
-`hybrid` profile needs both `VERDA_INFERENCE_API_KEY` (DeepSeek) and `VERDA_KIMI`.
-For CubiCasa drawings it also needs `GEMINI_API_KEY` (or `Gemini_API_KEY`), using
-`gemini-4-hydrogen` by default. Other sources retain their existing model routing.
-If only the DeepSeek key is available, set `STOA_ROUTER=deepseek` in `.env`.
-The application reads `.env` automatically; keep real keys out of version control.
+## Setup
 
-Windows PowerShell, from the repository root:
-
-```powershell
-uv sync
-Copy-Item .env.example .env  # first setup only; preserve an existing .env
-# Fill in .env, then ask about a drawing in the local data directory:
-uv run python -m stoa.ask data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
-```
-
-Evaluation additionally requires `junction-dataset-preview/questions.jsonl` and
-its referenced drawings under `junction-dataset-preview/data/`. The local
-`data/` directory alone is enough for individual drawing questions, but not for
-the evaluation command below.
+Python 3.13, dependencies managed with `uv`:
 
 ```bash
-uv run python -m stoa.eval --per-source 30 --workers 8      # writes out/eval_*.jsonl
+uv sync
+cp .env.example .env        # PowerShell: Copy-Item .env.example .env (first setup only)
 ```
 
-`eval` automatically grades text answers with DeepSeek after answering finishes
-(`--judge-workers 2` by default). `num_acc` reports numeric accuracy;
-`text_score` reports the mean reference-based grade (0, 0.5 or 1). `scored`
-counts both kinds. Judge failures appear as `jerr`, separately from answer
-errors, and can be retried by grading the saved file. Usage totals include
-judging; `judge$` shows its cost separately. Individual grades, explanations,
-usage and errors are saved in each row's `text_score`, `judge`, `judge_seconds`
-and `judge_error` fields; the original numeric `correct` field is unchanged.
+Fill in `.env`. The application reads it automatically; keep real keys out of
+version control.
 
-To grade an existing run without repeating the drawing questions:
+| Variable | Used for |
+|---|---|
+| `VERDA_INFERENCE_BASE_URL`, `VERDA_INFERENCE_API_KEY` | DeepSeek (routing, answer composition, text grading) |
+| `VERDA_KIMI` | Kimi (PDF schedules, non-CubiCasa vision) |
+| `GEMINI_API_KEY` (or `Gemini_API_KEY`) | Gemini 4 Hydrogen for CubiCasa drawings, and the UI's 3D render |
+| `STOA_ROUTER` | Model profile, default `hybrid`. Use `deepseek` if only the DeepSeek key is available |
 
-```powershell
-uv run python -m stoa.eval --score-existing out/eval_hybrid_20261114_143825.jsonl
+Keep `GEMINI_API_KEY` in `.env` only: an exported shell variable takes
+precedence over `.env`.
+
+## Ask a question
+
+```bash
+uv run python -m stoa.ask junction-dataset-preview/data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
 ```
 
-This writes a new `*_scored_<time>.jsonl` file and preserves the input. Rows
-already carrying a text score are reused. `stoa.compare` also reuses these scores.
+The output is JSON with the answer, unit, method, tool calls, evidence and a
+`deterministic` flag (false for vision-model answers, which need a human check).
 
-Every Verda call is logged to `logs/verda_calls.jsonl`.
+## Web UI
 
-### Gemini counting for CubiCasa
-
-Set `GEMINI_API_KEY` (or `Gemini_API_KEY`) in `.env`. The default `hybrid`
-profile now sends raster files under a `cubicasa5k` directory to Gemini:
-
-```powershell
-uv run python -m stoa.eval --source cubicasa5k --per-source 30 --workers 2 --seed 1024
+```bash
+uv run python -m stoa.ui.facts                  # once, ~10 s, no LLM: pre-compute facts into out/facts/
+uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
 ```
 
-The optional `hybrid_gemini` profile sends all raster drawings to
-`gemini-4-hydrogen` through Google's [OpenAI-compatible API](https://aistudio.google.com/docs/openai).
-DeepSeek routing, Kimi PDF table/vision handling and text grading keep their
-existing endpoints. The raster experiment uses the same prompt, 1600-pixel
-image cap, `reasoning_effort="low"` and `max_tokens=4096` as the Kimi baseline.
-`hybrid` remains the default. `GEMINI_MODEL` can override the Gemini model id.
+- Swiss dwellings plans are rendered from the DXF to SVG, so highlights use the
+  exact CAD geometry. CubiCasa plans use cached detector boxes.
+- **Ask** runs the pipeline and highlights only the evidence the answer cited.
+- The engineer can add objects by tapping and reject them by right-clicking.
+  Edits are saved to `out/edits/`.
+- **3D** renders an isometric view of the plan with Gemini `gemini-nano-banana-2.1`
+  (`STOA_IMAGE_MODEL` overrides it).
 
-Gemini calls go through the shared wrapper and are logged to
-`logs/verda_calls.jsonl` with `endpoint="gemini"` and `provider="google"`.
-Cost estimates use the standard paid-tier prices checked on 2026-11-14:
-$1.50 input / $7.50 output per million tokens, including thinking. Free-tier
-allowances and cache discounts are not reflected; update prices if changing
-the model. See [Google's pricing](https://aistudio.google.com/docs/pricing#gemini-4-hydrogen).
-When Google's compatibility response reports a total larger than input plus
-completion tokens, the difference is included in output usage/cost. Logs retain
-`reported_completion_tokens`, `unattributed_output_tokens` and `total_tokens`
-so this adjustment can be audited without counting thinking twice.
+## Model profiles
 
-Matched CubiCasa run (30 questions, seed 1024): Gemini 4 Hydrogen answered
-25/30 correctly (83.3%), versus Kimi's 17/30 (56.7%), fixing eight questions
-with no correctness regressions. Estimated paid-tier cost was $0.155036 vs
-$0.153496; mean per-question latency was 6.33 s vs 4.86 s. Gemini still missed
-three of four window questions. This is a small-sample comparison, not a
-dataset-wide accuracy estimate.
+| Profile | Routing | PDF schedules | Raster drawings |
+|---|---|---|---|
+| `hybrid` (default) | DeepSeek | Kimi | Gemini 4 Hydrogen for `cubicasa5k`, Kimi otherwise |
+| `hybrid_gemini` | DeepSeek | Kimi | Gemini 4 Hydrogen for all |
+| `deepseek` | DeepSeek | DeepSeek | DeepSeek |
 
-The experimental CubiCasa model is not part of the main dependency setup. It
-also needs the third-party `CubiCasa5k` source repository, pretrained weights,
-and its PyTorch/computer-vision dependencies before it can run.
+Vision calls use `reasoning_effort="low"`, a 4096-token budget and a 1600-pixel
+image cap. `GEMINI_MODEL` overrides the Gemini model id.
+
+Every LLM call, including Gemini (`provider="google"`), goes through
+`stoa.verda.chat` and is logged with tokens, latency and `cost_usd` to
+`logs/verda_calls.jsonl`. Gemini costs use the paid-tier prices checked on
+2026-11-14 ($1.50 / $7.50 per million input/output tokens, thinking included).
+When Google's usage reports a total larger than prompt + completion, the gap is
+counted as output. The raw fields are kept for auditing.
+
+## Evaluation
+
+Needs `junction-dataset-preview/questions.jsonl` and its drawings.
+
+```bash
+uv run python -m stoa.eval --per-source 40 --router hybrid --workers 8   # writes out/eval_<profile>_<time>.jsonl
+uv run python -m stoa.eval --source cubicasa5k --per-source 30 --seed 1024
+uv run python -m stoa.eval --score-existing out/eval_hybrid_<time>.jsonl # grade saved answers only
+uv run python -m unittest discover -s tests -v                           # regression tests
+```
+
+Keep `--workers` at 8 or fewer: the Verda gateway returns `429 tenant rpm` above that.
+
+- Counts must match exactly. Area, length and volume must be within 2%.
+- Text answers are graded by DeepSeek against the reference (0, 0.5 or 1)
+  after answering (`--judge-workers 2`). `num_acc` and `text_score` are
+  reported separately. Judge failures show as `jerr` and can be retried with
+  `--score-existing`, which writes a new `*_scored_<time>.jsonl` file and
+  reuses rows already graded.
+- Usage totals include judging; `judge$` shows its cost separately.
+- `stoa.compare` compares runs on shared questions. Use the same seed and
+  `--per-source` so runs are comparable.
+
+## Current results
+
+Small samples (30–64 questions per source), so a few points either way is not significant.
+
+| Source | Questions in preview | Accuracy | Cost per 1k questions | How |
+|---|---|---|---|---|
+| swiss_dwellings | 2358 | 97.5% | $0.19 | DXF geometry |
+| ifc_models | 1049 | 100% (excluding `kit-fzk-haus`, which has no IFC) | $0.29 | IFC queries |
+| opening_design | 64 | 47/48 numeric (the one miss was a 429) | $4.51 | Schedules rebuilt from the PDF's ruled grid |
+| cubicasa5k | 4270 | 25/30 (83%) with Gemini, vs 17/30 with Kimi | ~$5 | Raster vision |
+| ifc_bench | 249 | text, graded by `text_score` | $1.24 | IFC tools + LLM composition |
+
+Sources: `GAPS.md` (hybrid, 40 questions per source, seed 0) and `VERDA_LOG.md`
+(CubiCasa Gemini vs Kimi, 30 questions, seed 1024).
 
 ## Layout
 
-| File | Role |
+| Path | Role |
 |---|---|
-| `stoa/inspect_file.py` | Step 1: file type → which tools apply (no LLM) |
-| `stoa/pipeline.py` | Steps 2–4: LLM picks a tool, code answers, vision fallback |
-| `stoa/tools/ifc_tools.py` | IFC counts, quantity sums, room areas, element tables |
+| `stoa/inspect_file.py` | File type and sibling IFC/DXF → which tools apply (no LLM) |
+| `stoa/pipeline.py` | Router LLM picks a tool, code answers, vision fallback; model profiles |
+| `stoa/answer.py` | `Result` / `Evidence` types shared by every tool |
+| `stoa/tools/ifc_tools.py` | IFC counts, quantity sums, room areas, space breakdown, element tables |
 | `stoa/tools/dxf_tools.py` | DXF rooms, areas, apartments, doors, windows, fixtures |
 | `stoa/tools/pdf_tools.py` | PDF text layer (notes, legends) |
 | `stoa/tools/pdf_tables.py` | Schedules rebuilt from the PDF's ruled grid: exact counts/sums per row, ft²↔m² |
-| `stoa/tools/vision_tools.py` | Vision-model fallback for raster drawings |
-| `stoa/verda.py` | The only Verda client; logs every call |
-| `stoa/eval.py` | Scores against `questions.jsonl` (counts exact, measures ±2%) |
+| `stoa/tools/vision_tools.py` | Vision-model reading of raster drawings |
+| `stoa/tools/cubicasa_tools.py` | Experimental CubiCasa5K CNN, not wired into the pipeline |
+| `stoa/verda.py` | The only LLM client; logs every call |
+| `endpoints/verda/*.py`, `endpoints/gemini.py` | One module per endpoint: model id, prices, defaults |
+| `stoa/ask.py` | CLI: one question about one drawing |
+| `stoa/eval.py`, `stoa/judge.py`, `stoa/compare.py` | Evaluation, text grading, run comparison |
+| `stoa/ui/` | Verification web UI: `facts.py` (pre-compute), `server.py`, `render.py` (3D) |
+| `stoa/cubicasa_probe.py` | Compares the pipeline with the CubiCasa5K CNN on test/val drawings |
 
-## Baseline (30 random questions per source, seed 0)
+The experimental CubiCasa5K model needs the third-party repository cloned to
+`./CubiCasa5k`, the pretrained weights and PyTorch. 197 of the 241 preview
+drawings are in its train split, so judge it only with `stoa.cubicasa_probe`.
+Weights are CC BY-NC 4.0 (Kalervo et al. 2019).
 
-| Source | Accuracy | LLM calls/q | Tokens/q | Deterministic |
-|---|---|---|---|---|
-| swiss_dwellings | 100% | 1.0 | ~1.2k | 100% |
-| ifc_models | 100% | 1.1 | ~1.8k | 97% |
-| cubicasa5k | 47% | 1.0 | ~0.5k | 0% (vision only) |
-| opening_design | 26% | 3.4 | ~14k | 0% |
-| ifc_bench (text, unscored) | – | 2.1 | ~6.4k | 3% |
+## Data licences
 
-Tuning the tools directly against all English questions gave 513/513 on IFC-backed ifc_models questions and 1168/1179 on swiss_dwellings.
-
-## Known gaps / next steps
-
-See `GAPS.md`, ranked by how many questions each gap loses.
+Drawings come from `junction-dataset-preview/`. Licences are per source in
+`data/<source>/LICENSE.md`; keep the credit when displaying a drawing.
+cubicasa5k is NC-SA.
