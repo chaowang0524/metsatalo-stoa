@@ -42,7 +42,8 @@ and its PyTorch/computer-vision dependencies before it can run.
 | `stoa/pipeline.py` | Steps 2–4: LLM picks a tool, code answers, vision fallback |
 | `stoa/tools/ifc_tools.py` | IFC counts, quantity sums, room areas, element tables |
 | `stoa/tools/dxf_tools.py` | DXF rooms, areas, apartments, doors, windows, fixtures |
-| `stoa/tools/pdf_tools.py` | PDF text layer (schedules) |
+| `stoa/tools/pdf_tools.py` | PDF text layer (notes, legends) |
+| `stoa/tools/pdf_tables.py` | Schedules rebuilt from the PDF's ruled grid: exact counts/sums per row, ft²↔m² |
 | `stoa/tools/vision_tools.py` | Vision-model fallback for raster drawings |
 | `stoa/verda.py` | The only Verda client; logs every call |
 | `stoa/eval.py` | Scores against `questions.jsonl` (counts exact, measures ±2%) |
@@ -61,8 +62,4 @@ Tuning the tools directly against all English questions gave 513/513 on IFC-back
 
 ## Known gaps / next steps
 
-- **cubicasa5k (53% of questions)** is raster only and runs on the vision fallback. The next step is a small symbol/room detector fine-tuned on a Verda GPU.
-- **opening_design** schedules are read as flattened text, and the LLM misreads table columns. Needs table extraction.
-- The `kit-fzk-haus` plan PDF has no source IFC in the preview, so its 24 model-level questions fall back.
-- A few swiss_dwellings apartment and total areas are off because unnamed numbered rooms (bathrooms vs shafts) are classified by an area heuristic.
-- Image tokens don't seem to show up in `prompt_tokens`, so vision cost is under-reported.
+See `GAPS.md`, ranked by how many questions each gap loses.

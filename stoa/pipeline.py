@@ -20,7 +20,7 @@ from typing import Callable
 from stoa import verda
 from stoa.answer import Answer, ToolError, parse_llm_answer
 from stoa.inspect_file import FileInfo, inspect_file
-from stoa.tools import dxf_tools, ifc_tools, pdf_tools, vision_tools
+from stoa.tools import dxf_tools, ifc_tools, pdf_tables, pdf_tools, vision_tools
 
 MAX_TURNS = 4
 MAX_EVIDENCE_IDS = 300  # per tool output, so a huge element table can't blow up the prompt
@@ -55,7 +55,7 @@ class Tool:
     name: str
     description: str
     parameters: dict
-    source: str  # which FileInfo attribute the tool reads: "ifc" | "dxf" | "pdf" | "image"
+    source: str  # what the tool reads: "ifc" | "dxf" | "pdf" | "tables" (ruled schedules in the PDF) | "image"
     fn: Callable
     terminal: bool = True
     # List the output's evidence with ids the LLM cites. Off where the evidence
@@ -86,6 +86,24 @@ def _s(desc: str, optional: bool = False, **kw) -> dict:
 
 
 STOREY = "Storey/level name exactly as written in the question, e.g. '1.korrus'. Omit for the whole model."
+
+WHERE = {
+    "type": "array", "_optional": True,
+    "description": "Row filters. Use column names and cell values as listed.",
+    "items": {
+        "type": "object",
+        "properties": {
+            "column": {"type": "string"},
+            "match": {"type": "string", "enum": ["equals", "has", "contains", "startswith",
+                                                 "regex", "nonempty", "empty"],
+                      "description": "equals: whole cell; has: one of the codes in a list "
+                                     "cell like 'A, B' or 'F2 & F3'; contains: substring"},
+            "values": {"type": "array", "items": {"type": "string"},
+                       "description": "Any of these values matches"},
+        },
+        "required": ["column", "match"],
+    },
+}
 
 TOOLS = [
     Tool(
@@ -184,6 +202,32 @@ TOOLS = [
         {}, "dxf", dxf_tools.dxf_room_list, terminal=False,
     ),
     Tool(
+        "pdf_table_query",
+        "Exact count or sum over the rows of a schedule (door, window, finish, room table) "
+        "on this sheet. op=count counts matching rows; op=sum/max/min adds up or picks a "
+        "numeric column such as Area (SF) or Count. If the schedule has a quantity column "
+        "(Count, Qty), 'how many doors/windows of type X' is op=sum of that column, not a "
+        "row count. Filters are ANDed; each filter's values are ORed. Returns a number only: "
+        "for what/which questions use pdf_table_rows.",
+        {
+            "table": _s("Table id (e.g. 'T1') or title from the table list"),
+            "op": _s("What to compute", enum=["count", "sum", "max", "min"]),
+            "column": _s("Numeric column for sum/max/min, as listed", True),
+            "where": WHERE,
+            "unit": _s("Unit the question asks for, if it differs from the table's (e.g. 'm2' "
+                       "when the schedule is in SF)", True, enum=["ft2", "m2"]),
+        },
+        "tables", pdf_tables.pdf_table_query,
+    ),
+    Tool(
+        "pdf_table_rows",
+        "The schedule rows that pass the filters, every cell labelled with its column. Use "
+        "for what/which questions (the width, finish, type or material of one door or room, "
+        "the largest room) and arithmetic pdf_table_query can't do; you then write the answer.",
+        {"table": _s("Table id or title; omit to get every table", True), "where": WHERE},
+        "tables", pdf_tables.pdf_table_rows, terminal=False,
+    ),
+    Tool(
         "pdf_page_text",
         "Text of a PDF sheet, with table rows on one line. Use for schedules, legends "
         "and notes; you then compute the answer from the text.",
@@ -205,6 +249,7 @@ SYSTEM = """You answer questions about construction drawings and BIM models by c
 Rules:
 - If one tool call computes the answer, make just that call. Prefer deterministic tools; use ask_vision_model only if nothing else fits.
 - For breakdowns or comparisons, call several tools in one turn, then combine their results.
+- For schedules listed below the file line, use pdf_table_query (counts, sums) or pdf_table_rows (look up values) with the exact column names and cell values shown; prefer them over pdf_page_text.
 - Questions can be in any language. Keep quoted names (rooms, storeys, labels) exactly as written.
 - Storeys follow European numbering: the ground floor is level 0, "first floor"/"level 1" is the first storey above it (1. OG, OG1), "second floor" is OG2. Prefer a storey whose name carries that number; "basement"/"underground" is the storey named basement, Keller, kjeller or UG. Pass the storey name exactly as listed.
 - After an info tool (facts, room list, page text), work out the answer from its output and reply with JSON only:
@@ -253,11 +298,20 @@ def tools_for(info: FileInfo) -> list[Tool]:
         "pdf": info.pdf_text and info.path.suffix.lower() == ".pdf",
         "image": info.image is not None,
     }
+    have["tables"] = bool(have["pdf"] and _has_tables(info))
     return [t for t in TOOLS if have[t.source]]
 
 
 def _source_path(tool: Tool, info: FileInfo) -> str:
-    return str({"ifc": info.ifc, "dxf": info.dxf, "pdf": info.path, "image": info.image}[tool.source])
+    return str({"ifc": info.ifc, "dxf": info.dxf, "pdf": info.path, "tables": info.path,
+                "image": info.image}[tool.source])
+
+
+def _has_tables(info: FileInfo) -> bool:
+    """Schedules only matter on sheets without a model behind them; IFC/DXF tools answer the rest."""
+    if info.ifc or info.dxf:
+        return False
+    return bool(pdf_tables.tables(str(info.path)))
 
 
 def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> Answer:
@@ -276,6 +330,8 @@ def _describe(info: FileInfo) -> str:
             text += "\nStoreys, bottom to top: " + "; ".join(ifc_tools.storey_names(str(info.ifc)))
         except Exception:  # an unreadable model still gets the other tools' errors
             pass
+    if info.path.suffix.lower() == ".pdf" and _has_tables(info):
+        text += "\nSchedules on this sheet (for pdf_table_query / pdf_table_rows):\n" + pdf_tables.describe_tables(str(info.path))
     return text
 
 
@@ -330,7 +386,7 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
     evidence = []  # everything the tools looked at, for the composed answer
     for turn in range(MAX_TURNS):
         # Answers worked out from schedule text go to the table model.
-        endpoint = prof.table if any(c["tool"] == "pdf_page_text" for c in res.calls) else prof.route
+        endpoint = prof.table if any(c["tool"] in ("pdf_page_text", "pdf_table_rows") for c in res.calls) else prof.route
         last = turn == MAX_TURNS - 1
         if last:  # no more tools: answer from what has been gathered
             messages.append({"role": "user", "content": "No more tool calls. Reply with the JSON answer now."})
