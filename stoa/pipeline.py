@@ -12,6 +12,7 @@ which then composes an answer.
 """
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -22,6 +23,28 @@ from stoa.inspect_file import FileInfo, inspect_file
 from stoa.tools import dxf_tools, ifc_tools, pdf_tools, vision_tools
 
 MAX_TURNS = 4
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Which Verda endpoint does each job."""
+
+    route: str  # picks tools, composes answers from IFC/DXF tables
+    table: str  # composes answers from PDF schedule text (pdf_page_text)
+    vision: str  # reads rendered drawings
+    vision_thinking: bool = False  # reasoning on for vision calls (kimi only)
+
+
+# Benchmark on 200 questions (VERDA_LOG.md, 2026-11-14): deepseek routes
+# reliably and cheaply, but kimi reads drawings (cubicasa 70% vs 45%) and
+# schedules (opening_design text 55% vs 27%) better. "hybrid" combines them.
+PROFILES = {
+    "deepseek": Profile("deepseek", "deepseek", "deepseek"),
+    "kimi": Profile("kimi", "kimi", "kimi"),
+    "nemotron": Profile("nemotron", "nemotron", "nemotron"),
+    "hybrid": Profile(route="deepseek", table="kimi", vision="kimi", vision_thinking=True),
+}
+ROUTER = os.environ.get("STOA_ROUTER", "hybrid")
 
 
 @dataclass
@@ -176,7 +199,15 @@ class Result:
     llm_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cost_usd: float = 0.0
     error: str | None = None
+    router: str = ""
+
+    def add_usage(self, usage: dict) -> None:
+        self.llm_calls += 1
+        self.prompt_tokens += usage.get("prompt_tokens", 0)
+        self.completion_tokens += usage.get("completion_tokens", 0)
+        self.cost_usd += usage.get("cost_usd", 0.0)
 
     def to_json(self) -> dict:
         return {
@@ -187,7 +218,9 @@ class Result:
             "llm_calls": self.llm_calls,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
+            "cost_usd": round(self.cost_usd, 6),
             "error": self.error,
+            "router": self.router,
         }
 
 
@@ -205,26 +238,28 @@ def _source_path(tool: Tool, info: FileInfo) -> str:
     return str({"ifc": info.ifc, "dxf": info.dxf, "pdf": info.path, "image": info.image}[tool.source])
 
 
-def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict) -> Answer:
+def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> Answer:
     if tool.name == "ask_vision_model":
-        return tool.fn(_source_path(tool, info), args.get("question", ""), context=ctx)
+        return tool.fn(_source_path(tool, info), args.get("question", ""), context=ctx,
+                       endpoint=prof.vision, thinking=prof.vision_thinking)
     return tool.fn(_source_path(tool, info), **args)
 
 
-def answer(path: str | Path, question: str, context: dict | None = None) -> Result:
+def answer(path: str | Path, question: str, context: dict | None = None, router: str | None = None) -> Result:
+    router = router or ROUTER
+    prof = PROFILES[router]
     info = inspect_file(path)
     tools = tools_for(info)
-    res = Result(question=question, path=str(path), answer=None)
+    res = Result(question=question, path=str(path), answer=None, router=router)
     ctx = {"file": Path(path).name, **(context or {})}
     by_name = {t.name: t for t in tools}
 
     # Only the vision model applies (raster drawing): skip the routing call.
     if [t.name for t in tools] == ["ask_vision_model"]:
-        res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx)
+        res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
+                                                   endpoint=prof.vision, thinking=prof.vision_thinking)
         res.calls.append({"tool": "ask_vision_model", "args": {"question": question}})
-        res.llm_calls = 1
-        res.prompt_tokens = res.answer.usage.get("prompt_tokens", 0)
-        res.completion_tokens = res.answer.usage.get("completion_tokens", 0)
+        res.add_usage(res.answer.usage)
         return res
     if not tools:
         res.error = f"Unsupported file: {info.describe()}"
@@ -237,14 +272,17 @@ def answer(path: str | Path, question: str, context: dict | None = None) -> Resu
     specs = [t.spec() for t in tools]
     evidence = []  # everything the tools looked at, for the composed answer
     for turn in range(MAX_TURNS):
+        # Answers worked out from schedule text go to the table model.
+        endpoint = prof.table if any(c["tool"] == "pdf_page_text" for c in res.calls) else prof.route
+        last = turn == MAX_TURNS - 1
+        if last:  # no more tools: answer from what has been gathered
+            messages.append({"role": "user", "content": "No more tool calls. Reply with the JSON answer now."})
         resp = verda.chat(
             "route question" if turn == 0 else "compose answer",
-            messages, context=ctx, tools=specs, max_tokens=800, temperature=0,
+            messages, context=ctx, endpoint=endpoint, max_tokens=800, temperature=0,
+            **({} if last else {"tools": specs}),
         )
-        res.llm_calls += 1
-        if resp.usage:
-            res.prompt_tokens += resp.usage.prompt_tokens or 0
-            res.completion_tokens += resp.usage.completion_tokens or 0
+        res.add_usage(verda.usage_of(resp, endpoint))
         msg = resp.choices[0].message
         if not msg.tool_calls:
             data = parse_llm_answer(verda.text_of(resp))
@@ -268,14 +306,12 @@ def answer(path: str | Path, question: str, context: dict | None = None) -> Resu
                 if tool is None:
                     raise ToolError(f"Unknown tool {tc.function.name!r}")
                 res.calls.append({"tool": tool.name, "args": args})
-                out = _run(tool, info, args, ctx)
+                out = _run(tool, info, args, ctx, prof)
             except (ToolError, TypeError, json.JSONDecodeError) as e:
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": f"ERROR: {e}"})
                 continue
             if out.usage:
-                res.llm_calls += 1
-                res.prompt_tokens += out.usage.get("prompt_tokens", 0)
-                res.completion_tokens += out.usage.get("completion_tokens", 0)
+                res.add_usage(out.usage)
             outputs.append((tool, out))
             evidence += out.evidence
             payload = out.value if not tool.terminal else out.summary(max_evidence=20)

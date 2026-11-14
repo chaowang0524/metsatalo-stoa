@@ -4,11 +4,11 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=f"{os.environ['VERDA_INFERENCE_BASE_URL']}",
-    api_key=os.environ["VERDA_INFERENCE_API_KEY"],
+    api_key=os.environ["VERDA_KIMI"],
 )
 
 resp = client.chat.completions.create(
-    model="deepseek-4-1-flash-1017",
+    model="kimi-k3-1-pro",
     messages=[{"role": "user", "content": "What is the best viewpoint in Helsinki?"}],
     max_tokens=2048,
 )

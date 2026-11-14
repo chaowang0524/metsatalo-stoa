@@ -2,6 +2,7 @@
 
     uv run python -m stoa.eval --per-source 20 --workers 8
     uv run python -m stoa.eval --source swiss_dwellings --limit 100
+    uv run python -m stoa.eval --per-source 30 --skip cubicasa5k --router kimi
 
 Counts must match exactly; area, length and volume within 2%. Text answers are
 free-form and reported but not scored.
@@ -16,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+from stoa import pipeline
 from stoa.pipeline import answer
 
 DATASET = Path("junction-dataset-preview")
@@ -41,6 +43,8 @@ def load(args) -> list[dict]:
         q["source"] = q["path"].split("/")[1]
     if args.source:
         qs = [q for q in qs if q["source"] == args.source]
+    if args.skip:
+        qs = [q for q in qs if q["source"] not in args.skip.split(",")]
     rng = random.Random(args.seed)
     if args.per_source:
         by = collections.defaultdict(list)
@@ -74,10 +78,14 @@ def main() -> None:
     ap.add_argument("--per-source", type=int)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--skip", help="comma-separated sources to leave out")
+    ap.add_argument("--router", help="model profile: hybrid (default), deepseek, kimi or nemotron")
     args = ap.parse_args()
 
     qs = load(args)
-    out_path = Path("out") / f"eval_{datetime.now():%Y%m%d_%H%M%S}.jsonl"
+    if args.router:
+        pipeline.ROUTER = args.router
+    out_path = Path("out") / f"eval_{pipeline.ROUTER}_{datetime.now():%Y%m%d_%H%M%S}.jsonl"
     out_path.parent.mkdir(exist_ok=True)
     print(f"{len(qs)} questions -> {out_path}")
 
@@ -89,7 +97,8 @@ def main() -> None:
             if i % 25 == 0:
                 print(f"  {i}/{len(qs)}")
 
-    print(f"\n{'source':<17}{'n':>5}{'scored':>8}{'acc':>8}{'llm/q':>7}{'tok/q':>8}{'det%':>6}")
+    print(f"\nprofile: {pipeline.ROUTER} {pipeline.PROFILES[pipeline.ROUTER]}")
+    print(f"{'source':<17}{'n':>5}{'scored':>8}{'acc':>8}{'llm/q':>7}{'tok/q':>8}{'$/1kq':>8}{'s/q':>6}{'err':>5}{'det%':>6}")
     groups = collections.defaultdict(list)
     for r in rows:
         groups[r["source"]].append(r)
@@ -100,7 +109,10 @@ def main() -> None:
         llm = sum(r.get("llm_calls", 0) for r in rs) / len(rs)
         tok = sum(r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in rs) / len(rs)
         det = sum(bool(r.get("answer") and r["answer"]["deterministic"]) for r in rs) / len(rs)
-        print(f"{src:<17}{len(rs):>5}{len(scored):>8}{acc:>8.1%}{llm:>7.2f}{tok:>8.0f}{det:>6.0%}")
+        usd = sum(r.get("cost_usd", 0) for r in rs) / len(rs) * 1e3
+        sec = sum(r["seconds"] for r in rs) / len(rs)
+        err = sum(bool(r.get("error")) or not r.get("answer") for r in rs)
+        print(f"{src:<17}{len(rs):>5}{len(scored):>8}{acc:>8.1%}{llm:>7.2f}{tok:>8.0f}{usd:>8.3f}{sec:>6.1f}{err:>5}{det:>6.0%}")
 
 
 if __name__ == "__main__":

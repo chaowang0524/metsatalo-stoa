@@ -35,7 +35,9 @@ def _png_bytes(path: Path, page: int = 0) -> bytes:
     return pix.tobytes("png")
 
 
-def ask_vision_model(path: str, question: str, page: int = 0, context: dict | None = None) -> Answer:
+def ask_vision_model(path: str, question: str, page: int = 0, context: dict | None = None,
+                     endpoint: str = "kimi", thinking: bool = False) -> Answer:
+    """`thinking` turns kimi's reasoning back on (it is off in its DEFAULTS)."""
     b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
     resp = verda.chat(
         "vision fallback",
@@ -47,11 +49,13 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
             ],
         }],
         context=context,
-        max_tokens=400,
+        endpoint=endpoint,
+        # Reasoning counts against max_tokens; counting symbols took up to 6k.
+        max_tokens=12000 if thinking else 400,
+        **({"extra_body": {"thinking": {"type": "enabled"}}} if thinking else {}),
         temperature=0,
     )
     data = parse_llm_answer(verda.text_of(resp))
-    u = resp.usage
     return Answer(
         value=data["answer"],
         unit=data.get("unit"),
@@ -59,5 +63,5 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
         deterministic=False,
         evidence=[Evidence(ref=f"page {page}", label=str(data.get("explanation", ""))[:300], page=page)],
         note="Model estimate from the image; verify on the drawing.",
-        usage={"prompt_tokens": u.prompt_tokens or 0, "completion_tokens": u.completion_tokens or 0} if u else {},
+        usage=verda.usage_of(resp, endpoint),
     )
