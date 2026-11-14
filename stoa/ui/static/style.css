@@ -103,7 +103,13 @@ main { flex: 1; display: flex; min-height: 0; }
 .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .hint { color: var(--muted); font-size: 12px; }
 
-#panel { width: 380px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--line);
+#splitter { width: 8px; flex-shrink: 0; cursor: col-resize; background: var(--line); position: relative; touch-action: none; }
+#splitter::after { content: ""; position: absolute; left: 2px; top: 50%; width: 4px; height: 36px; margin-top: -18px;
+  border-radius: 2px; background: var(--muted); opacity: .5; }
+#splitter:hover, #splitter:focus-visible, #splitter.dragging { background: var(--accent); outline: none; }
+#splitter:hover::after, #splitter.dragging::after { background: #fff; opacity: 1; }
+body.resizing { cursor: col-resize; user-select: none; }
+#panel { width: 380px; flex-shrink: 0; background: var(--panel); 
   display: flex; flex-direction: column; min-height: 0; }
 .doc-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
 .doc-head h1 { font-size: 15px; margin: 0 0 4px; word-break: break-all; }
@@ -203,7 +209,8 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 @media (max-width: 820px) {
   main { flex-direction: column; }
   #stage { flex: none; height: 55vh; }
-  #panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); flex: 1; }
+  #splitter { display: none; }
+  #panel { width: 100% !important; border-left: 0; border-top: 1px solid var(--line); flex: 1; }
   .bar { flex-wrap: wrap; padding: 8px 12px; }
   #search { order: 3; flex: 1 1 40%; }
   #picker { order: 4; flex: 1 1 40%; max-width: none; }

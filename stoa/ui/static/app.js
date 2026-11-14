@@ -174,6 +174,7 @@ async function loadDoc(id) {
   state.pinned = state.hover = state.single = state.adhoc = state.addKind = state.sel = null;
   state.edits.added.forEach(normalise);
   addedFacts();
+  zoomed = null;
   history.replaceState(null, "", `#${id}`);
   const v = doc.view;
   const bg = $("#bg");
@@ -281,7 +282,7 @@ function itemList(f) {
       h("span", { className: "v", textContent: it.value != null ? fmt(it.value, typeof it.value === "number" ? "m2" : null) : "" }));
     li.onmouseenter = () => { state.single = it.ref; drawHighlight(); };
     li.onmouseleave = () => { state.single = null; drawHighlight(); };
-    li.onclick = () => zoomTo(bboxOf(it.shape));
+    li.onclick = () => zoomToggle(it.ref, bboxOf(it.shape));
     ul.append(li);
   }
   if (!n && !ul.children.length) ul.append(h("li", { className: "muted", textContent: "None on this plan." }));
@@ -372,6 +373,13 @@ function zoomTo(b) {
   let w = Math.max(b[2] - b[0], state.doc.view.width / 12) * 2.5, hh = w / ar;
   setView({ x: (b[0] + b[2]) / 2 - w / 2, y: (b[1] + b[3]) / 2 - hh / 2, w, h: hh });
 }
+// Click an item to zoom in on it, click it again to go back to the view before the first zoom.
+let zoomed = null; // { ref, prev }
+function zoomToggle(ref, b) {
+  if (zoomed?.ref === ref) { setView(zoomed.prev); zoomed = null; return; }
+  zoomed = { ref, prev: zoomed?.prev ?? { ...state.view } };
+  zoomTo(b);
+}
 function toView(clientX, clientY) {
   const pt = svg.createSVGPoint();
   pt.x = clientX; pt.y = clientY;
@@ -443,6 +451,42 @@ $("#z-out").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(r.x 
 $("#z-fit").onclick = fit;
 window.addEventListener("resize", () => state.doc && fit());
 
+// ---------- splitter between the plan and the side panel ----------
+// The plan keeps its scale and centre while the panel is resized; the width is remembered per browser.
+const PANEL_W = 380, panel = $("#panel"), splitter = $("#splitter");
+function setPanelWidth(w) {
+  const max = Math.max(260, window.innerWidth - 320);
+  w = Math.round(Math.min(Math.max(w, 260), max));
+  const k = unitsPerPx(), v = state.view, cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+  panel.style.width = `${w}px`;
+  splitter.setAttribute("aria-valuenow", w);
+  if (state.doc) {
+    const nw = svg.clientWidth * k, nh = svg.clientHeight * k;
+    setView({ x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh });
+  }
+  try { localStorage.setItem("stoa.panelWidth", w); } catch {}
+}
+try { const w = +localStorage.getItem("stoa.panelWidth"); if (w) panel.style.width = `${w}px`; } catch {}
+splitter.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  splitter.setPointerCapture(e.pointerId);
+  splitter.classList.add("dragging"); document.body.classList.add("resizing");
+  const move = (ev) => setPanelWidth(window.innerWidth - ev.clientX - splitter.offsetWidth / 2);
+  const up = () => {
+    splitter.classList.remove("dragging"); document.body.classList.remove("resizing");
+    splitter.removeEventListener("pointermove", move); splitter.removeEventListener("pointerup", up);
+    splitter.removeEventListener("pointercancel", up);
+  };
+  splitter.addEventListener("pointermove", move);
+  splitter.addEventListener("pointerup", up);
+  splitter.addEventListener("pointercancel", up);
+});
+splitter.ondblclick = () => setPanelWidth(PANEL_W);
+splitter.onkeydown = (e) => {
+  const d = { ArrowLeft: 24, ArrowRight: -24 }[e.key];
+  if (d) { e.preventDefault(); e.stopPropagation(); setPanelWidth(panel.offsetWidth + d * (e.shiftKey ? 4 : 1)); }
+};
+
 // ---------- editing: pick a kind, tap the plan to add; right-click / long-press to remove ----------
 const components = () => state.doc.facts.filter((f) => f.group === "Components");
 
@@ -454,12 +498,7 @@ const addCursor = (c) => `url("data:image/svg+xml,${encodeURIComponent(
 function buildPalette() {
   const box = $("#palette-kinds");
   box.replaceChildren();
-  for (const f of components()) {
-    const b = h("button", { type: "button" }, h("span", { className: "swatch", style: `background:${color(f.kind)}` }), kindName(f.kind).replace(/^./, (c) => c.toUpperCase()));
-    b.setAttribute("aria-pressed", state.addKind === f.kind && !state.addLib);
-    b.onclick = () => arm(state.addKind === f.kind && !state.addLib ? null : f.kind);
-    box.append(b);
-  }
+  // The plan's own kinds are armed from the facts panel; the palette only adds the library.
   const lb = h("button", { type: "button", className: "lib-btn", title: "Symbol library: windows, doors, fixtures and more from other drawings" }, "▦ Library…");
   lb.setAttribute("aria-pressed", !!state.addLib);
   lb.setAttribute("aria-expanded", libOpen());
@@ -468,7 +507,7 @@ function buildPalette() {
   const k = state.addKind, v = state.addLib && state.addLib !== "generic" ? libVariant(state.addLib) : null;
   const which = v ? ` (library, ${v.label})` : state.addLib ? " (standard symbol)" : "";
   $("#palette").classList.toggle("armed", !!k);
-  $("#palette-hint").textContent = k ? `Tap the plan to add a ${kindName(k)}${which}, right-click one to remove · Esc to stop` : "Tap the plan to add";
+  $("#palette-hint").textContent = k ? `Tap the plan to add a ${kindName(k)}${which}, right-click one to remove · Esc to stop` : "Click a component on the right to add more, or pick from the";
   $("#btn-undo").hidden = !state.history.length;
   svg.classList.toggle("adding", !!k);
   if (k) svg.style.setProperty("--add-cursor", addCursor(color(k)));
