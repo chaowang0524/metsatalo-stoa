@@ -27,7 +27,7 @@ EDITS = Path("out/edits")
 QUOTES = Path("out/quotes")
 OUT.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Stoa plan review")
+app = FastAPI(title="Mestari plan review")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 app.mount("/facts", StaticFiles(directory=OUT), name="facts")
 app.mount("/data", StaticFiles(directory=DATA), name="data")

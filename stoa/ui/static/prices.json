@@ -88,7 +88,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 125.39999999999999,
-    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: fit frame, hang and adjust the door, fit the trims."
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: fit frame, hang and adjust the door, fit the trims."
    }
   },
   "toilet": {
@@ -162,7 +162,7 @@
       "trade": "plumber",
       "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
       "excl_vat": 72.5,
-      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: mount the basin and connect the trap."
+      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Mestari assumption: mount the basin and connect the trap."
      }
     ],
     "excl_vat": 207.16135458167332
@@ -216,7 +216,7 @@
       "trade": "plumber",
       "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
       "excl_vat": 72.5,
-      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: set the sink into the worktop and connect the trap."
+      "note": "1 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Mestari assumption: set the sink into the worktop and connect the trap."
      }
     ],
     "excl_vat": 207.16135458167332
@@ -342,7 +342,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 125.39999999999999,
-    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: assemble and fix one wardrobe unit."
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: assemble and fix one wardrobe unit."
    }
   },
   "appliance": {
@@ -390,7 +390,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 668.8,
-    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: two working days to set the insert, connect the flue and build a simple surround."
+    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: two working days to set the insert, connect the flue and build a simple surround."
    }
   },
   "chimney": {
@@ -415,7 +415,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 668.8,
-    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: two working days incl. roof penetration; height-dependent."
+    "note": "16 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: two working days incl. roof penetration; height-dependent."
    }
   },
   "stair": {
@@ -440,7 +440,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 501.59999999999997,
-    "note": "12 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: one and a half days to install a straight flight."
+    "note": "12 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: one and a half days to install a straight flight."
    }
   },
   "railing": {
@@ -465,7 +465,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 125.39999999999999,
-    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: fix one railing section."
+    "note": "3 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: fix one railing section."
    }
   },
   "stove": {
@@ -513,7 +513,7 @@
     "trade": "carpenter",
     "url": "https://expert-zoom.com/fi/lehti/kodin-kunnostus/remonttimies-hinta",
     "excl_vat": 20.9,
-    "note": "0.5 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Stoa assumption: unpack, place and level; no fixed connection needed."
+    "note": "0.5 h × 41.8 €/h (Renovation worker / carpenter 40–65 €/h incl. VAT (midpoint 52.5 → 41.8 excl. VAT)). Hours are a Mestari assumption: unpack, place and level; no fixed connection needed."
    }
   },
   "radiator": {
@@ -538,7 +538,7 @@
     "trade": "plumber",
     "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
     "excl_vat": 217.5,
-    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: drain the circuit, swap the radiator and valve, refill and bleed."
+    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Mestari assumption: drain the circuit, swap the radiator and valve, refill and bleed."
    }
   },
   "drain": {
@@ -570,7 +570,7 @@
     "trade": "plumber",
     "url": "https://vhapipetechnology.fi/blogi/tuntihinta-opas-mita-putkimies-maksaa/",
     "excl_vat": 217.5,
-    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Stoa assumption: set and connect the drain; waterproofing and screed are not included."
+    "note": "3 h × 72.5 €/h (Plumber 55–90 €/h excl. VAT in 2025 (midpoint 72.5)). Hours are a Mestari assumption: set and connect the drain; waterproofing and screed are not included."
    }
   },
   "socket": {

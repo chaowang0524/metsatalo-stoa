@@ -1,4 +1,4 @@
-// Stoa Plan Check: pre-computed facts over the plan, hover to verify, tap to add, ask, render and share the render.
+// Mestari Plan Check: pre-computed facts over the plan, hover to verify, tap to add, ask, render and share the render.
 "use strict";
 
 const NS = "http://www.w3.org/2000/svg";

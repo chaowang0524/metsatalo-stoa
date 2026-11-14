@@ -1,196 +1,331 @@
-# Stoa: verifiable answers about construction drawings
+# Mestari: the on-site engineer's co-pilot
 
-Ask a question about a drawing or BIM model in natural language. The answer
-comes with the evidence it was computed from (IFC `GlobalId`, DXF entity
-handle, PDF table row), so an onsite engineer can check it on the plan in
-seconds. Deterministic extraction comes first; vision models are used only
-where there is no vector or BIM data.
+Our entry for the Junction 2026 Stoa challenge (brief in `challenge.md`).
+Mestari is Finnish for the site foreman (*työmaamestari*), the person an
+engineer turns to with a question. Every number it gives comes with the
+evidence from the drawing.
 
-Pipeline flowchart: `PIPELINE.md`. Endpoint decisions and experiment log:
-`VERDA_LOG.md`. Remaining gaps, ranked by lost questions: `GAPS.md`. Challenge
-briefs: `challenge.md`, `side_quest.md`. Verda rules: `VERDA_ENDPOINT_GUIDELINES.md`.
+Onsite engineers lose hours every day hunting through drawings and BIM models
+for a number: how many windows are on this floor, what is the area of this
+apartment, how thick is that wall. How much do these cost. General-purpose AI models often get these wrong, and nothing shows the engineer *why* they got a number. 
 
-## Setup
+Mestari answers natural-language questions about a drawing or BIM model, in any
+language. Every answer comes with the evidence it was computed from, such as an
+IFC `GlobalId`, a DXF entity handle or a PDF table row, and that evidence is
+highlighted on the plan. An engineer can check the answer in seconds and fix it
+if it is wrong.
 
-Python 3.13, dependencies managed with `uv`:
+The design rule is **deterministic first**. If a drawing has vector or BIM data
+(DXF, IFC, a PDF text layer), code reads the answer straight from the geometry,
+and a cheap LLM only picks which tool to run. Vision models are used only for
+raster scans, and their answers are marked as needing a human check. This keeps
+answers exact and cheap. Better frontier models will improve the vision
+fallback, but they won't replace the deterministic part.
+
+## Try it: live demo
+
+Open **https://65-108-33-73.sslip.io** and log in with user `reviewer` and
+password `junction2026`.
+
+The preview dataset's drawings are already loaded. "Ask", "3D" and image
+uploads call paid models, so each click costs a few cents. Everything else runs
+without an LLM.
+
+A five-minute tour:
+
+1. **Pick a drawing.** Use the search box (`/`) or the ‹ › arrows (← →). Each
+   source shows a different level of confidence:
+   - **swiss_dwellings**: the plan is drawn from the DXF, so highlights are the
+     exact CAD geometry.
+   - **ifc_models**: plans rendered from an IFC model. Answers trace back to IFC
+     elements by `GlobalId`.
+   - **cubicasa5k**: raster scans. The objects come from a vision model, so
+     treat them as a first draft to check.
+2. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
+   doors, windows, fixtures and so on). Hover or click a fact to highlight its
+   objects on the plan. Click the same item again to zoom back out.
+3. **Ask a question.** Click "💬 Ask a question" and type in any language, for
+   example *"How many windows are there?"*, *"What is the total area of the
+   bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
+   badged **exact** (computed from vector or BIM data) or **model answer ·
+   verify** (vision). "Highlight references" shows only the evidence it
+   used on the plan, and "Sources and calculation details" lists the method, the tools called and
+   the cost.
+4. **Human in the loop.** If something is missing or wrong, fix it by hand:
+   - click a component kind in the Facts panel, then click the plan to add one;
+   - right-click an object to reject it;
+   - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
+     real-world size.
+
+   Counts update immediately, edits are saved on the server, and ⌘Z undoes them.
+5. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
+   material and labour prices. Each price links to its source (Taloon.com,
+   K-Rauta, or published hourly rates). You can overwrite any quantity or price,
+   then "Submit" freezes a quote. Its `/quote/<id>` link lets a client approve
+   it, ask for changes, print it or download a CSV.
+6. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF. "◈ 3D"
+   renders an isometric view of the edited plan with Gemini.
+7. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
+   files:
+   - DXF: exact CAD facts;
+   - plan SVG + IFC: BIM facts;
+   - PNG, JPG or a scanned PDF: one vision-model pass in the background (about
+     1 minute, $0.10–0.18);
+   - other PDFs: Ask only.
+
+   See [Check the results yourself](#check-the-results-yourself) for how to use
+   this to test us on your own drawings.
+
+## Check the results yourself
+
+You don't need our evaluation scripts. Take drawings from the dataset, upload
+them in the live demo, and compare what the UI says with the reference answers
+in `questions.jsonl`. The preview drawings are already loaded, so for a fair
+test use drawings from the **full dataset** that we have not seen.
+
+1. **Pick drawings.** Files with the same name and a different extension are
+   the same drawing, so upload them together, the way the dataset ships them:
+
+   | Source | Upload | What you get |
+   |---|---|---|
+   | swiss_dwellings | `<stem>.pdf` + `<stem>.dxf` | Exact facts from the CAD geometry, in seconds, no LLM |
+   | ifc_models | `<model>.ifc` + `<model>_<level>.svg` (and the `.pdf`) | Exact facts from the BIM model, linked by `GlobalId` |
+   | cubicasa5k | `<stem>.png` | One vision pass in the background (about 1 minute, ~$0.18), then checkable boxes |
+   | opening_design, other PDFs | `<stem>.pdf` | The PDF as background; use Ask |
+
+2. **Upload.** Click "⤒ Upload" or drag files onto the page. You can drop many
+   drawings at once, and each one appears in the drawing list when it is ready.
+3. **Look up the reference answers.** `questions.jsonl` has one line per
+   question, with `path`, `question`, `answer` and `unit`:
+
+   ```bash
+   grep '<stem>' questions.jsonl
+   ```
+
+4. **Compare.** Most count and area questions ("How many doors…", "What is the
+   area of the kitchen…") can be read straight from the **Facts** tab. For any
+   other question, use **Ask** as it is. Any language works, because the
+   models that read the question are multilingual. 
+5. **Check why.** Hover a fact or click "Highlight references" under an answer
+   to see the objects it counted. If a number is wrong, you can usually see the
+   cause on the plan, such as a missed window or a neighbouring flat counted
+   too, and fix it with a click.
+
+The [Results](#results) table below says what to expect per source. Answers from CAD and
+BIM data should match. Scanned plans are a vision model's first draft, which is
+why every object is drawn on the plan for checking.
+
+## Features
+
+| Feature | What it gives the engineer |
+|---|---|
+| Natural-language Q&A, any language | Counts, areas, lengths, volumes and free-text answers about a drawing or IFC model |
+| Evidence on the plan | Each answer highlights the exact CAD entities, IFC elements or table rows it came from |
+| Deterministic flag | Exact answers are marked as exact. Vision answers are marked as needing a check |
+| Pre-computed facts | Room areas and component counts for every plan, with no LLM cost |
+| Human correction loop | Add, reject or stamp objects. The facts and the cost update straight away |
+| Symbol library | Real door, window and fixture symbols taken from the CAD and IFC data |
+| Sourced cost estimate and quote | Plan quantities × cited Finnish prices, with editable lines and an approval link |
+| Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
+| Cost logging | Every model call is logged with its tokens, latency and USD cost (`logs/verda_calls.jsonl`) |
+
+## How it works
+
+```
+drawing + question
+   │
+   ├─ inspect_file (no LLM): what formats exist for this drawing? (DXF, IFC, PDF text, raster)
+   │
+   ├─ vector / BIM data ──► DeepSeek picks a tool ──► code computes the answer
+   │                         (IFC queries, DXF geometry, PDF tables rebuilt from ruled lines)
+   │
+   └─ raster only ────────► vision model lists the objects and their locations ──► code counts the list
+   │
+   ▼
+answer + unit + method + evidence + deterministic flag
+```
+
+- **IFC** (`stoa/tools/ifc_tools.py`): counts, quantity sums, room areas, type
+  breakdowns and material layers, read from the model with IfcOpenShell.
+- **DXF** (`stoa/tools/dxf_tools.py`): rooms, areas, apartments, doors,
+  windows, fixtures and baseboard length, from the CAD entities.
+- **PDF schedules** (`stoa/tools/pdf_tables.py`): door and window schedules
+  rebuilt from the PDF's ruled grid, so totals are summed by code.
+- **Raster plans**: Gemini 4 Hydrogen lists every requested object with its
+  location, and code counts the list. This is still an estimate, so the UI shows
+  the boxes for the engineer to check.
+
+Models: DeepSeek routes and composes text answers ($0.15/$0.60 per M tokens),
+Kimi reads PDF schedules and other images, and Gemini reads raster floor plans.
+`PIPELINE.md` has the full flowchart, and `VERDA_LOG.md` records why each
+endpoint was chosen.
+
+## Results
+
+These come from small samples (30–64 questions per source), so a few points
+either way is not significant.
+
+| Source | Questions in preview | Accuracy | Cost per question | How |
+|---|---|---|---|---|
+| swiss_dwellings | 2358 | 97.5% | $0.0002 | DXF geometry |
+| ifc_models | 1049 | 100% (excluding `kit-fzk-haus`, which has no IFC) | $0.0003 | IFC queries |
+| opening_design | 64 | 47/48 numeric (the one miss was a rate-limit error) | $0.0045 | Schedules rebuilt from the PDF's ruled grid |
+| cubicasa5k | 4270 | 25/30 (83%) with Gemini | ~$0.005 | Raster vision |
+| ifc_bench | 249 | text answers, graded by `text_score` | $0.0012 | IFC tools + LLM composition |
+
+Sources: `GAPS.md` (hybrid profile, 40 questions per source, seed 0) and
+`VERDA_LOG.md` (CubiCasa, Gemini vs Kimi, 30 questions, seed 1024). Scoring
+follows the challenge: counts must match exactly, and areas, lengths and
+volumes must be within 2%.
+
+## Run it locally
+
+Python 3.13, with dependencies managed by `uv`:
 
 ```bash
 uv sync
-cp .env.example .env        # PowerShell: Copy-Item .env.example .env (first setup only)
+cp .env.example .env        # then fill in the keys
 ```
-
-Fill in `.env`. The application reads it automatically; keep real keys out of
-version control.
 
 | Variable | Used for |
 |---|---|
 | `VERDA_INFERENCE_BASE_URL`, `VERDA_INFERENCE_API_KEY` | DeepSeek (routing, answer composition, text grading) |
-| `VERDA_KIMI` | Kimi (PDF schedules, non-CubiCasa vision) |
-| `GEMINI_API_KEY` (or `Gemini_API_KEY`) | Gemini 4 Hydrogen for CubiCasa drawings, and the UI's 3D render |
-| `STOA_ROUTER` | Model profile, default `hybrid`. Use `deepseek` if only the DeepSeek key is available |
+| `VERDA_KIMI` | Kimi (PDF schedules, other vision) |
+| `GEMINI_API_KEY` | Gemini 4 Hydrogen for raster plans, and the 3D render |
+| `STOA_ROUTER` | Model profile, default `hybrid`. Use `deepseek` if you only have the DeepSeek key |
 
-Keep `GEMINI_API_KEY` in `.env` only: an exported shell variable takes
-precedence over `.env`.
+The `.env` value takes precedence over an exported `GEMINI_API_KEY`. The
+dataset goes in `junction-dataset-preview/`, which is not in the repository.
 
-## Ask a question
+**Web UI**
+
+```bash
+uv run python -m stoa.ui.facts                  # once, no LLM: pre-compute facts into out/facts/
+uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
+```
+
+**One question from the command line**
 
 ```bash
 uv run python -m stoa.ask junction-dataset-preview/data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
 ```
 
-The output is JSON with the answer, unit, method, tool calls, evidence and a
-`deterministic` flag (false for vision-model answers, which need a human check).
+This prints JSON with the answer, unit, method, tool calls, evidence and the
+`deterministic` flag.
 
-## Web UI
+## Quick evaluation from the command line
+
+`stoa.eval` samples questions from a dataset's `questions.jsonl`, answers them,
+scores them with the challenge rules and prints accuracy, cost and latency per
+source. It needs the setup from [Run it locally](#run-it-locally), including the
+API keys.
+
+**Quick check (25 questions, about 30 seconds, about $0.12):**
 
 ```bash
-uv run python -m stoa.ui.facts                  # once, ~10 s, no LLM: pre-compute facts into out/facts/
-uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
+uv run python -m stoa.eval --per-source 5             # add --seed N for a different sample
 ```
 
-- Swiss dwellings plans are rendered from the DXF to SVG, so highlights use the
-  exact CAD geometry. CubiCasa plans use cached detector boxes.
-- **Ask** runs the pipeline and highlights only the evidence the answer cited.
-- The engineer can add objects by tapping and reject them by right-clicking.
-  Edits are saved to `out/edits/`.
-- **3D** renders an isometric view of the plan with Gemini `gemini-nano-banana-2.1`
-  (`STOA_IMAGE_MODEL` overrides it).
+Our run on 2026-11-14:
 
-## Model profiles
+```
+source               n  scored  num_acc  text_score  llm/q   tok/q   $/1kq   judge$   s/q  err  jerr  det%
+cubicasa5k           5       5    80.0%           -   1.00    1927   5.685  0.00000   4.6    0     0    0%
+ifc_bench            5       5        -       60.0%   3.20   20122   3.223  0.00202  10.0    0     0   40%
+ifc_models           5       5    80.0%           -   1.60    4594   4.041  0.00000   4.9    0     0   80%
+opening_design       5       5   100.0%       87.5%   2.80    7812   9.773  0.00021   5.3    0     0   20%
+swiss_dwellings      5       5   100.0%           -   1.00    2232   0.362  0.00000   5.5    0     0  100%
+ALL                 25      25    87.5%       72.2%   1.92    7338   4.617  0.00224   6.1    0     0   48%
+```
+
+Five questions per source is a very small sample. Here the one ifc_models miss
+is `kit-fzk-haus`, which has no IFC. Use `--per-source 40` for numbers you can
+compare.
+
+- `num_acc`: share of numeric answers that are correct (counts exact; areas,
+  lengths and volumes within 2%).
+- `text_score`: the mean grade of free-text answers. DeepSeek grades each one
+  against the reference as 0, 0.5 or 1.
+- `$/1kq`: the cost per 1,000 questions, including grading.
+- `det%`: share of answers computed by code, not by a vision model.
+
+Each answer, with its evidence, is saved to `out/eval_<profile>_<time>.jsonl`.
+
+**Reproduce the [Results](#results) table:**
+
+```bash
+uv run python -m stoa.eval --per-source 40 --seed 0                     # all sources (GAPS.md run)
+uv run python -m stoa.eval --source cubicasa5k --per-source 30 --seed 1024  # cubicasa, 25/30
+uv run python -m stoa.eval --per-source 50 --seed 123 --type text       # text questions only
+```
+
+**Test on your own or held-out data:** point `--dataset` at any folder in the
+dataset's layout (`questions.jsonl` plus `data/<source>/...`), for example the
+full dataset:
+
+```bash
+uv run python -m stoa.eval --dataset path/to/junction-dataset --per-source 20 --seed 7
+```
+
+Other options:
+
+| Option | Effect |
+|---|---|
+| `--source <name>` | One source only, e.g. `swiss_dwellings` |
+| `--skip a,b` | Leave sources out (the rest keep the same questions) |
+| `--type count\|area\|text\|...` | One question type, chosen after sampling so it matches a full run |
+| `--limit N` | N random questions instead of N per source |
+| `--router deepseek` | Run with only the DeepSeek key (other profiles below) |
+| `--score-existing <file>` | Re-grade saved answers without answering again |
+
+- `uv run python -m stoa.compare a.jsonl b.jsonl` compares two runs on their
+  shared questions. Use the same `--seed` and `--per-source` for both runs.
+- `uv run python -m unittest discover -s tests -v` runs the regression tests.
+- Keep `--workers` (default 8) at 8 or fewer, because the Verda gateway
+  rate-limits above that.
+
+### Model profiles
 
 | Profile | Routing | PDF schedules | Raster drawings |
 |---|---|---|---|
-| `hybrid` (default) | DeepSeek | Kimi | Gemini 4 Hydrogen for `cubicasa5k`, Kimi otherwise |
-| `hybrid_gemini` | DeepSeek | Kimi | Gemini 4 Hydrogen for all |
+| `hybrid` (default) | DeepSeek | Kimi | Gemini for `cubicasa5k`, Kimi otherwise |
+| `hybrid_gemini` | DeepSeek | Kimi | Gemini for all |
 | `deepseek` | DeepSeek | DeepSeek | DeepSeek |
 
-Vision calls use `reasoning_effort="low"`, a 4096-token budget and a 1600-pixel
-image cap. `GEMINI_MODEL` overrides the Gemini model id.
+Vision calls use low reasoning effort, a 4096-token budget and a 1600 px image
+cap. `GEMINI_MODEL` overrides the Gemini model id.
 
-CubiCasa count questions beginning with "How many" or "Kuinka monta" use a
-dedicated scope-and-inventory prompt. The model identifies the dwelling and its
-floors, excludes incidental neighboring fragments, and lists each requested
-object with its location. Code computes the count from the list length. This is
-still a vision estimate (`deterministic=False`); `note` records the scope and
-`evidence` contains the object list. Evaluation keeps the complete list.
-Truncated or invalid inventories are recorded as failures with their billed
-usage retained. Other questions keep the general vision prompt.
+### Raster detection cache
 
-### CubiCasa-compatible Gemini detection cache
+The CubiCasa plans in the UI use one Gemini full-plan detection per drawing,
+cached in CubiCasa class names with pixel bounding boxes:
 
 ```bash
-uv run python -m stoa.cubicasa_gemini --limit 3
-uv run python -m stoa.cubicasa_gemini --workers 8
+uv run python -m stoa.cubicasa_gemini --workers 8    # writes out/cubicasa_gemini_cache/<stem>.json
 ```
 
-This extracts all icon and room instances from each PNG with
-`gemini-4-hydrogen`, using the full image and high reasoning effort. Results go
-to `out/cubicasa_gemini_cache/<stem>.json`. Each file has the existing
-`file`, `icons`, `rooms` structure and CubiCasa class names. Every item has
-`class` and `bbox: [x0, y0, x1, y1]` in original PNG pixels. The model's
-normalized `[ymin, xmin, ymax, xmax]` coordinates are converted and validated
-before writing. All visible floors and neighboring fragments are in scope.
-The existing taxonomy includes tubs as `Bathtub` and has no shower class.
+Valid results are reused on restart (`--overwrite` reruns them). Raw responses,
+hashes and the usage of every attempt are kept under `_audit/`. Truncated
+responses are retried with a larger budget.
 
-Matching valid outputs are reused on restart. `--files a.png b.png` selects
-individual inputs, `--overwrite` reruns them, and `--output-dir` changes the
-destination. Raw responses, input/settings hashes, every attempt's usage and
-batch summaries are saved under `_audit/`. All API calls also appear in
-`logs/verda_calls.jsonl` with `run="cubicasa_gemini"`. Failed or truncated
-responses retain billed usage and receive bounded retries. Truncation doubles
-the output budget up to 65,536 tokens. If high/xhigh reasoning still exhausts
-that budget, the next attempt uses medium effort, recorded in its audit entry.
-Writes use atomic
-replacement. These are model estimates whose counting and localization
-accuracy should be checked against annotations.
-
-Every LLM call, including Gemini (`provider="google"`), goes through
-`stoa.verda.chat` and is logged with tokens, latency and `cost_usd` to
-`logs/verda_calls.jsonl`. Gemini costs use the paid-tier prices checked on
-2026-11-14 ($1.50 / $7.50 per million input/output tokens, thinking included).
-When Google's usage reports a total larger than prompt + completion, the gap is
-counted as output. The raw fields are kept for auditing.
-
-## Evaluation
-
-Needs `junction-dataset-preview/questions.jsonl` and its drawings.
-
-```bash
-uv run python -m stoa.eval --per-source 40 --router hybrid --workers 8   # writes out/eval_<profile>_<time>.jsonl
-uv run python -m stoa.eval --source cubicasa5k --per-source 30 --seed 1024
-uv run python -m stoa.eval --per-source 50 --seed 123 --type text --workers 4 # same text subset as the full run
-uv run python -m stoa.eval --score-existing out/eval_hybrid_<time>.jsonl # grade saved answers only
-uv run python -m unittest discover -s tests -v                           # regression tests
-```
-
-Keep `--workers` at 8 or fewer: the Verda gateway returns `429 tenant rpm` above that.
-Verda 429 responses receive up to two additional retries with a shared cooldown
-within the process (15/30 seconds, extended by a numeric Retry-After header up to
-120 seconds). Logs record `rate_limit_retries`; sustained rate limits can still
-fail. A later API failure now retains usage from earlier successful pipeline calls.
-
-- Counts must match exactly. Area, length and volume must be within 2%.
-- Text answers are graded by DeepSeek against the reference (0, 0.5 or 1)
-  after answering (`--judge-workers 2`). `num_acc` and `text_score` are
-  reported separately. Judge failures show as `jerr` and can be retried with
-  `--score-existing`, which writes a new `*_scored_<time>.jsonl` file and
-  reuses rows already graded.
-- Usage totals include judging; `judge$` shows its cost separately.
-- `--type text` filters after sampling, preserving question IDs from the same
-  seed/per-source full run. The reference answers and judge rubric are unchanged.
-- `stoa.compare` compares runs on shared questions. Use the same seed and
-  `--per-source` so runs are comparable.
-
-IFC text answers use exact GUID lookup, exterior/interior filtering (standard
-properties or explicitly labeled ArchiCAD wall layers, with provenance), material
-layer thicknesses, project/site metadata, and code-computed count/size summaries.
-Partial tool results are composed into a complete answer instead of returned as a
-single number. DeepSeek composition has up to 4096 output tokens; routing remains
-at 800. Detail rows expose omitted groups, while count and size summaries include
-all matching elements. Missing classifications remain unknown.
-
-## Current results
-
-Small samples (30–64 questions per source), so a few points either way is not significant.
-
-| Source | Questions in preview | Accuracy | Cost per 1k questions | How |
-|---|---|---|---|---|
-| swiss_dwellings | 2358 | 97.5% | $0.19 | DXF geometry |
-| ifc_models | 1049 | 100% (excluding `kit-fzk-haus`, which has no IFC) | $0.29 | IFC queries |
-| opening_design | 64 | 47/48 numeric (the one miss was a 429) | $4.51 | Schedules rebuilt from the PDF's ruled grid |
-| cubicasa5k | 4270 | 25/30 (83%) with Gemini, vs 17/30 with Kimi | ~$5 | Raster vision |
-| ifc_bench | 249 | text, graded by `text_score` | $1.24 | IFC tools + LLM composition |
-
-Sources: `GAPS.md` (hybrid, 40 questions per source, seed 0) and `VERDA_LOG.md`
-(CubiCasa Gemini vs Kimi, 30 questions, seed 1024).
-
-## Layout
+## Repository layout
 
 | Path | Role |
 |---|---|
 | `stoa/inspect_file.py` | File type and sibling IFC/DXF → which tools apply (no LLM) |
 | `stoa/pipeline.py` | Router LLM picks a tool, code answers, vision fallback; model profiles |
 | `stoa/answer.py` | `Result` / `Evidence` types shared by every tool |
-| `stoa/tools/ifc_tools.py` | IFC counts, quantity sums, room areas, space breakdown, element tables |
-| `stoa/tools/dxf_tools.py` | DXF rooms, areas, apartments, doors, windows, fixtures |
-| `stoa/tools/pdf_tools.py` | PDF text layer (notes, legends) |
-| `stoa/tools/pdf_tables.py` | Schedules rebuilt from the PDF's ruled grid: exact counts/sums per row, ft²↔m² |
-| `stoa/tools/vision_tools.py` | Vision-model reading of raster drawings |
-| `stoa/tools/cubicasa_tools.py` | Experimental CubiCasa5K CNN, not wired into the pipeline |
+| `stoa/tools/` | IFC, DXF, PDF text, PDF tables and vision tools |
 | `stoa/verda.py` | The only LLM client; logs every call |
 | `endpoints/verda/*.py`, `endpoints/gemini.py` | One module per endpoint: model id, prices, defaults |
 | `stoa/ask.py` | CLI: one question about one drawing |
 | `stoa/eval.py`, `stoa/judge.py`, `stoa/compare.py` | Evaluation, text grading, run comparison |
-| `stoa/ui/` | Verification web UI: `facts.py` (pre-compute), `server.py`, `render.py` (3D) |
+| `stoa/ui/` | Web UI: `facts.py` (pre-compute), `server.py`, `uploads.py`, `library.py`, `render.py` (3D), `static/` |
 | `stoa/cubicasa_probe.py` | Compares the pipeline with the CubiCasa5K CNN on test/val drawings |
 
-The experimental CubiCasa5K model needs the third-party repository cloned to
-`./CubiCasa5k`, the pretrained weights and PyTorch. 197 of the 241 preview
-drawings are in its train split, so judge it only with `stoa.cubicasa_probe`.
-Weights are CC BY-NC 4.0 (Kalervo et al. 2019).
 
 ## Data licences
 
-Drawings come from `junction-dataset-preview/`. Licences are per source in
-`data/<source>/LICENSE.md`; keep the credit when displaying a drawing.
-cubicasa5k is NC-SA.
+Drawings come from the Junction dataset. Licences are per source in
+`data/<source>/LICENSE.md`. Keep the credit when displaying a drawing.
+cubicasa5k is CC BY-NC-SA.
