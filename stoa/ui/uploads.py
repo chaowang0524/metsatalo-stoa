@@ -53,7 +53,7 @@ CREDIT = "Uploaded drawing"
 KINDS = [(".dxf", "dxf"), (".svg", "svg"), (".pdf", "pdf"), *((e, "raster") for e in sorted(RASTER)), (".ifc", "ifc")]
 SOURCE = {"dxf": "swiss_dwellings", "svg": "ifc_models", "raster": "cubicasa5k", "pdf": "pdf", "ifc": "ifc"}
 
-_pool = ThreadPoolExecutor(4)  # Gemini detection takes ~1 min per plan
+_pool = ThreadPoolExecutor(20)  # Gemini detection takes ~1 min per plan; a batch upload runs side by side
 _lock = threading.Lock()
 
 
