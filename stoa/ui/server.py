@@ -8,7 +8,7 @@ import base64
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from stoa import pipeline
 from stoa.ui import render as render3d
+from stoa.ui import uploads
 from stoa.ui.facts import DATA, OUT
 
 STATIC = Path(__file__).parent / "static"
@@ -26,6 +27,9 @@ app = FastAPI(title="Stoa plan review")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 app.mount("/facts", StaticFiles(directory=OUT), name="facts")
 app.mount("/data", StaticFiles(directory=DATA), name="data")
+uploads.UPLOADS.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads.UPLOADS), name="uploads")
+uploads.resume()
 
 
 def _doc_path(source: str, stem: str) -> Path:
@@ -48,7 +52,24 @@ def index():
 @app.get("/api/drawings")
 def drawings():
     p = OUT / "index.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    return uploads.index() + (json.loads(p.read_text(encoding="utf-8")) if p.exists() else [])
+
+
+@app.post("/api/uploads")
+async def upload(files: list[UploadFile] = File(...)):
+    """Floor plans from the engineer (or an evaluator): facts are computed in the background."""
+    if len(files) > uploads.MAX_FILES:
+        raise HTTPException(413, f"at most {uploads.MAX_FILES} files per upload")
+    got = []
+    for f in files:
+        data = await f.read()
+        if len(data) > uploads.MAX_BYTES:
+            raise HTTPException(413, f"{f.filename} is larger than {uploads.MAX_BYTES // 2**20} MB")
+        got.append((f.filename or "drawing", data))
+    try:
+        return await run_in_threadpool(uploads.save, got)
+    except Exception as e:  # e.g. an image PIL can't read
+        raise HTTPException(400, f"upload failed: {type(e).__name__}: {e}")
 
 
 @app.get("/api/drawings/{source}/{stem}")
@@ -90,8 +111,9 @@ def _to_view(bbox, frame):
 async def ask(q: Ask):
     source, stem = q.id.split("/", 1)
     doc = json.loads(_doc_path(source, stem).read_text(encoding="utf-8"))
-    path = DATA / source / doc["file"]
-    res = await run_in_threadpool(pipeline.answer, path, q.question, {"ui": True}, q.router)
+    # Uploads carry their own path and kind; dataset drawings are found by source.
+    path = Path(doc["path"]) if doc.get("path") else DATA / source / doc["file"]
+    res = await run_in_threadpool(pipeline.answer, path, q.question, {"ui": True}, q.router, doc.get("floor_plan"))
     out = res.to_json()
     # Evidence refs (IFC GlobalIds, DXF handles) are the same refs as the
     # pre-computed items, so most shapes are a lookup. DXF evidence that isn't
@@ -102,7 +124,7 @@ async def ask(q: Ask):
     for e in (res.answer.evidence if res.answer else []):
         # Without a DXF frame, evidence boxes are already in view units (CubiCasa
         # PNG pixels, e.g. windows the vision model added).
-        shape = shapes.get(e.ref) or ({"bbox": _to_view(e.bbox, frame)} if e.bbox and (frame or source == "cubicasa5k") else None)
+        shape = shapes.get(e.ref) or ({"bbox": _to_view(e.bbox, frame)} if e.bbox and (frame or doc["source"] == "cubicasa5k") else None)
         if shape and e.ref not in seen:
             seen.add(e.ref)
             out["items"].append({"ref": e.ref, "label": e.label, "value": e.value, "shape": shape})

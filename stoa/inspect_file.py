@@ -16,7 +16,14 @@ class FileInfo:
     dxf: Path | None = None  # CAD vectors for this drawing, if any
     pdf_text: bool = False  # PDF has an extractable text layer
     image: Path | None = None  # something renderable for the vision fallback
+    # A raster residential floor plan like CubiCasa5K's: counts go to the floor-plan
+    # vision path. None reads it from the dataset layout; uploads set it explicitly.
+    floor_plan: bool | None = None
     notes: list[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.floor_plan is None:
+            self.floor_plan = self.kind == "raster" and in_cubicasa(self.path)
 
     def describe(self) -> str:
         bits = [f"file: {self.path.name} ({self.kind})"]
@@ -38,6 +45,10 @@ def _source_ifc(path: Path) -> Path | None:
         if stem.startswith(c.stem + "_"):
             return c
     return None
+
+
+def in_cubicasa(path: str | Path) -> bool:
+    return any(part.casefold() == "cubicasa5k" for part in Path(path).parts)
 
 
 def inspect_file(path: str | Path) -> FileInfo:

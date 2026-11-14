@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from stoa import verda
 from stoa.answer import Answer, Evidence, ToolError, parse_llm_answer
+from stoa.inspect_file import in_cubicasa
 
 MAX_SIDE = 1600
 INVENTORY_METHOD = "vision object inventory; count computed from list length"
@@ -53,6 +54,8 @@ Question: {question}"""
 # 44 test+val window questions (drawings the detector wasn't trained on): exact
 # 24/44 in two runs vs 21 and 20 for the inventory prompt, within one 29/44 vs
 # 25 and 24. Doors stay on the inventory prompt, which did better for them.
+# The cache now holds Gemini full-plan detections (stoa.cubicasa_gemini) in the
+# same schema; the CNN is out of the main flow. Uploaded plans are added on upload.
 DETECTOR_CACHE = Path("out/cubicasa_cache")
 WINDOW_SIDE = 2048  # small scans are upscaled so thin window marks survive
 WINDOW_WHAT = ("Count the windows. A window is drawn as a thin opening in a wall, usually with one "
@@ -101,8 +104,8 @@ class VisionResponseError(ToolError):
         self.usage = usage
 
 
-def _cubicasa_count(path: str, question: str) -> bool:
-    return (any(part.casefold() == "cubicasa5k" for part in Path(path).parts)
+def _cubicasa_count(path: str, question: str, floor_plan: bool | None = None) -> bool:
+    return ((in_cubicasa(path) if floor_plan is None else floor_plan)
             and bool(re.match(r"\s*(how many\b|kuinka monta\b)", question, re.I)))
 
 
@@ -111,7 +114,7 @@ def _window_question(question: str) -> bool:
 
 
 def detector_windows(path: str | Path) -> list[list[float]] | None:
-    """Window boxes from the cached CubiCasa5K detector run, in image pixels, in
+    """Window boxes from the cached full-plan detection, in image pixels, in
     the order stoa.ui.facts numbers them (window-0, window-1, ...)."""
     cached = DETECTOR_CACHE / f"{Path(path).stem}.json"
     if not cached.exists():
@@ -199,7 +202,7 @@ def _count_windows(path: str, question: str, context: dict | None, endpoint: str
     if boxes is not None:
         how = (f"{len(accepted)} of {len(boxes)} detector boxes confirmed, {len(points)} windows added "
                "by the vision model")
-        method = "CubiCasa5K detector proposals checked by a vision model; count = confirmed + added"
+        method = "full-plan detection boxes checked by a vision model; count = confirmed + added"
     else:
         how = f"{len(points)} windows located by the vision model"
         method = "vision model window list with positions; count computed from list length"
@@ -250,11 +253,12 @@ def _png_bytes(path: Path, page: int = 0) -> bytes:
 
 
 def ask_vision_model(path: str, question: str, page: int = 0, context: dict | None = None,
-                     endpoint: str = "kimi", effort: str | None = None) -> Answer:
+                     endpoint: str = "kimi", effort: str | None = None, floor_plan: bool | None = None) -> Answer:
     """An explicit `effort` overrides the endpoint's default reasoning effort.
-    Kimi defaults to low effort with thinking enabled.
+    Kimi defaults to low effort with thinking enabled. `floor_plan` marks a
+    CubiCasa-style raster plan; None reads it from the path.
     """
-    inventory = _cubicasa_count(path, question)
+    inventory = _cubicasa_count(path, question, floor_plan)
     if inventory and _window_question(question):
         return _count_windows(path, question, context, endpoint, effort)
     b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()

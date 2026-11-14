@@ -16,6 +16,9 @@
   </div>
   <select id="picker" aria-label="Drawing"></select>
   <div class="actions">
+    <button id="btn-upload" class="tool" title="Upload floor plans (one or many): PNG/JPG, PDF, DXF, IFC + plan SVG">⤒ Upload</button>
+    <input id="upload-input" type="file" multiple hidden
+      accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.dxf,.svg,.ifc">
     <div id="cost">
       <button id="btn-cost" class="tool" title="Installed cost of the components on this plan" aria-expanded="false" aria-controls="cost-pop">€ Cost ▾</button>
       <div id="cost-pop" role="dialog" aria-label="Cost estimate" hidden></div>
@@ -81,6 +84,7 @@
   <div class="dlg-foot"><button id="btn-share-3d" disabled aria-haspopup="menu">↗ Share render</button></div>
 </dialog>
 
+<div id="drop" hidden><div>Drop drawings to upload<small>PNG / JPG plans, PDF, DXF (+ its PDF), IFC + plan SVG</small></div></div>
 <div id="toast" role="status"></div>
 <script src="/static/app.js"></script>
 </body>
