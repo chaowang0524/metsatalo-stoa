@@ -526,3 +526,229 @@ def _row_quantities(ifc_class: str) -> tuple[str, ...]:
     if ifc_class in ("IfcWall", "IfcBeam", "IfcColumn", "IfcMember", "IfcRailing"):
         return ("length", "net_volume")
     return ("net_volume",)
+
+
+# ---- grouped quantities ("slab area by type", "wall types with thickness") -----
+
+GROUP_KEYS = ["type", "name", "thickness", "material", "storey", "predefined_type", "is_external"]
+
+# Classes whose thickness is meaningful (layered build-ups).
+_LAYERED = ("IfcSlab", "IfcWall", "IfcCovering", "IfcRoof", "IfcPlate", "IfcCurtainWall")
+_THICKNESS_PROPS = re.compile(r"^(thickness|default thickness|dicke|standarddicke|gesamtdicke|width)$", re.I)
+_REBAR = re.compile(r"reinforc|rebar|bewehr|armier|armatur", re.I)
+
+
+def _thickness(path: str, e) -> tuple[float | None, str]:
+    """Thickness in metres: material layers, then quantity sets, then properties."""
+    length = _scales(path)["length"]
+    mat = ue.get_material(e, should_inherit=True)
+    if mat is not None and mat.is_a("IfcMaterialLayerSetUsage"):
+        mat = mat.ForLayerSet
+    if mat is not None and mat.is_a("IfcMaterialLayerSet"):
+        t = sum(l.LayerThickness or 0 for l in mat.MaterialLayers)
+        if t > 0:
+            return t * length, "material layer set"
+    for src in (e, ue.get_type(e)):
+        if src is None:
+            continue
+        for qset_name, qset in ue.get_psets(src, qtos_only=True).items():
+            if qset_name and "Quantities" not in qset_name:
+                continue
+            v = qset.get("Width")
+            if isinstance(v, (int, float)) and v > 0:
+                return v * length, f"{qset_name}.Width"
+        for pset_name, props in ue.get_psets(src, psets_only=True).items():
+            for k, v in props.items():
+                if _THICKNESS_PROPS.match(k) and isinstance(v, (int, float)) and v > 0:
+                    return v * length, f"{pset_name}.{k}"
+    # Last resort: volume over the face area (footprint for slabs, side for walls),
+    # rounded to 5 mm since openings and edge cuts skew it slightly.
+    sh = _shape(path, e.id())
+    if sh is not None and e.is_a() != "IfcCurtainWall":
+        try:
+            g = sh.geometry
+            face = us.get_side_area(g) if e.is_a("IfcWall") else us.get_footprint_area(g)
+            if face > 0:
+                return round(us.get_volume(g) / face / 0.005) * 0.005 or None, "geometry volume/area (≈)"
+        except ValueError:
+            pass
+    return None, "no thickness"
+
+
+def _reinforcement(e) -> dict:
+    """Rebar properties (bar diameter, spacing, ...) from the element and its type.
+    'Reference' and 'id' are skipped: exporters fill Reference with the type name."""
+    out = {}
+    for src in (ue.get_type(e), e):
+        if src is None:
+            continue
+        for pset_name, props in ue.get_psets(src, psets_only=True).items():
+            for k, v in props.items():
+                if k in ("id", "Reference") or v in (None, ""):
+                    continue
+                if _REBAR.search(pset_name or "") or _REBAR.search(k):
+                    out[f"{pset_name}.{k}"] = v
+    return out
+
+
+_EXT = re.compile(r"au(ss|ß)en|exterior|external|outer|ulko", re.I)
+_INT = re.compile(r"innen|interior|internal|inner|sisä|partition", re.I)
+
+
+def _is_external(e) -> bool | None:
+    """Pset_*Common.IsExternal; else the CAD layer name ('Außenwände', 'A-WALL-EXTR')."""
+    v = _common_props(e).get("IsExternal")
+    if isinstance(v, bool):
+        return v
+    layers = [l.Name or "" for l in getattr(e, "LayerAssignments", None) or ()]
+    if not layers:
+        for rep in getattr(getattr(e, "Representation", None), "Representations", None) or ():
+            layers += [l.Name or "" for l in getattr(rep, "LayerAssignments", None) or ()]
+    for props in ue.get_psets(e, psets_only=True).values():
+        for k in ("Ebene", "Layer"):
+            if isinstance(props.get(k), str):
+                layers.append(props[k])
+    for name in layers:
+        if _EXT.search(name):
+            return True
+        if _INT.search(name):
+            return False
+    return None
+
+
+def _group_value(path: str, e, key: str) -> str:
+    if key == "type":
+        t = ue.get_type(e)
+        return (t.Name if t and t.Name else None) or e.Name or "(untyped)"
+    if key == "name":
+        return e.Name or "(unnamed)"
+    if key == "thickness":
+        t, how = _thickness(path, e)
+        return f"{'≈' if '≈' in how else ''}{round(t * 1000)} mm" if t else "(unknown thickness)"
+    if key == "material":
+        return ", ".join(_materials(e)) or "(no material)"
+    if key == "storey":
+        s = _storey_of(e)
+        return s.Name if s else "(no storey)"
+    if key == "predefined_type":
+        v = getattr(e, "PredefinedType", None)
+        if v in (None, "NOTDEFINED", "USERDEFINED") and (t := ue.get_type(e)):
+            v = getattr(t, "PredefinedType", None) or v
+        return v or "NOTDEFINED"
+    if key == "is_external":
+        return {True: "external", False: "internal"}.get(_is_external(e), "(IsExternal not set)")
+    raise ToolError(f"Unknown group_by {key!r}. Use {GROUP_KEYS}")
+
+
+def _mm_range(ts: list[float]) -> str:
+    mm = sorted({round(t * 1000) for t in ts})
+    if not mm:
+        return ""
+    return f"{mm[0]} mm" if len(mm) == 1 else f"{mm[0]}–{mm[-1]} mm (mixed)"
+
+
+def ifc_group_quantity(
+    path: str,
+    ifc_class: str,
+    group_by: list[str] | str = "type",
+    quantity: str | None = None,
+    storey: str | None = None,
+    predefined_type: str | None = None,
+    is_external: bool | None = None,
+    only: str | None = None,
+) -> Answer:
+    """Elements of one class grouped by type, thickness, material, storey, ... with
+    count, share, thickness and an optional summed quantity per group. With `only`,
+    returns the number (quantity total, else count) for the matching group(s)."""
+    keys = [group_by] if isinstance(group_by, str) else list(group_by or ["type"])
+    if quantity and quantity not in QUANTITIES:
+        raise ToolError(f"Unknown quantity {quantity!r}. Use one of {list(QUANTITIES)}")
+    elems = _elements(path, ifc_class, storey)
+    if predefined_type:
+        want = predefined_type.upper()
+        elems = [e for e in elems if _group_value(path, e, "predefined_type") == want]
+    if is_external is not None:
+        elems = [e for e in elems if _is_external(e) is is_external]
+    if not elems:
+        raise ToolError(f"No {ifc_class} matched the filters")
+
+    show_thickness = ifc_class in _LAYERED or "thickness" in keys
+    length = _scales(path)["length"]
+    groups: dict[str, dict] = {}
+    rebar_seen = {}
+    for e in elems:
+        g = groups.setdefault(
+            " | ".join(_group_value(path, e, k) for k in keys),
+            {"elems": [], "qty": 0.0, "thick": [], "methods": set()},
+        )
+        g["elems"].append(e)
+        if show_thickness:
+            t, how = _thickness(path, e)
+            if t:
+                g["thick"].append(t)
+                g["methods"].add(f"thickness from {how}")
+        if ifc_class in ("IfcDoor", "IfcWindow") and e.OverallWidth and e.OverallHeight:
+            g.setdefault("sizes", set()).add(
+                f"{round(e.OverallWidth * length * 1000)}×{round(e.OverallHeight * length * 1000)} mm")
+        if quantity:
+            v, how = _quantity(path, e, quantity)
+            g["methods"].add(f"{quantity} from {how}")
+            g.setdefault("per", {})[e.id()] = v
+            g["qty"] += v or 0
+        if r := _reinforcement(e):
+            rebar_seen[e.GlobalId] = r
+
+    kind = QUANTITIES[quantity][1] if quantity else None
+    unit = UNITS[kind] if kind else "count"
+    if only:
+        want = _norm(only)
+        hit = [k for k in groups if _norm(k) == want] or [k for k in groups if want in _norm(k)]
+        if not hit:
+            raise ToolError(f"No group matching {only!r}. Groups: {list(groups)}")
+        groups = {k: groups[k] for k in hit}
+
+    n = sum(len(g["elems"]) for g in groups.values())
+    total = sum(g["qty"] for g in groups.values())
+    rows = sorted(groups.items(), key=lambda kv: (-(kv[1]["qty"] if quantity else 0), -len(kv[1]["elems"]), kv[0]))
+    lines = [f"{ifc_class}: {n} elements in {len(rows)} group(s) by {' + '.join(keys)}"
+             + (f", total {quantity} {total:.2f} {unit}" if quantity else "")]
+    evidence = []
+    for key, g in rows:
+        c = len(g["elems"])
+        line = f"- {key}: {c} ({100 * c / n:.1f}%)"
+        if show_thickness and "thickness" not in keys and (tr := _mm_range(g["thick"])):
+            line += f", thickness {tr}"
+        if sizes := sorted(g.get("sizes", ())):
+            line += ", size (W×H) " + ", ".join(sizes[:4]) + (" …" if len(sizes) > 4 else "")
+        if quantity:
+            share = f" ({100 * g['qty'] / total:.1f}%)" if total else ""
+            line += f", {quantity} {g['qty']:.2f} {unit}{share}"
+        lines.append(line)
+        for e in g["elems"]:
+            v = g.get("per", {}).get(e.id())
+            evidence.append(Evidence(ref=e.GlobalId, label=f"{key}: {_label(e)}",
+                                     value=round(v, 3) if v is not None else None))
+
+    if ifc_class == "IfcSlab" or rebar_seen:
+        if rebar_seen:
+            distinct: dict[str, int] = {}
+            for r in rebar_seen.values():
+                k = json.dumps(r, sort_keys=True, default=str, ensure_ascii=False)
+                distinct[k] = distinct.get(k, 0) + 1
+            lines.append(f"Reinforcement properties on {len(rebar_seen)} element(s):")
+            lines += [f"  {c} element(s): {k}" for k, c in sorted(distinct.items(), key=lambda kv: -kv[1])[:5]]
+        else:
+            try:
+                bars = len(open_ifc(path).by_type("IfcReinforcingBar"))
+            except RuntimeError:
+                bars = 0
+            lines.append(f"Reinforcement: no bar data on these elements; {bars} IfcReinforcingBar in the model.")
+
+    method = f"IFC {ifc_class} grouped by {', '.join(keys)}"
+    if sources := sorted(set().union(*(g["methods"] for g in groups.values()))):
+        method += "; " + ", ".join(sources)
+    if only:
+        return Answer(value=round(total, 3) if quantity else n, unit=unit,
+                      method=method + f"; group {only!r}", evidence=evidence,
+                      note="\n".join(lines))
+    return Answer(value="\n".join(lines), unit=None, method=method, evidence=evidence)

@@ -137,6 +137,30 @@ TOOLS = [
         "ifc", ifc_tools.ifc_sum_quantity,
     ),
     Tool(
+        "ifc_group_quantity",
+        "Elements of one IFC class grouped by type, thickness, material, storey, "
+        "predefined type (FLOOR/ROOF/BASESLAB/LANDING) or internal/external, with count, "
+        "percentage, thickness and an optional summed quantity per group. Use for "
+        "'which X types with quantities', 'slab area by type/thickness', 'wall types and "
+        "their thicknesses', 'volume breakdown by type'. Slab area = net_area. Reports "
+        "rebar properties when the model has any. Set `only` to get one group's number "
+        "(e.g. area of the 300 mm slabs: group_by thickness, only '300 mm').",
+        {
+            "ifc_class": _s("IFC class", enum=ifc_tools.COUNTABLE),
+            "group_by": {"type": "array", "_optional": True,
+                         "items": {"type": "string", "enum": ifc_tools.GROUP_KEYS},
+                         "description": "Grouping keys, nested in order. Default ['type']. "
+                                        "'name' groups by element name when types are generic."},
+            "quantity": _s("Quantity to sum per group", True, enum=list(ifc_tools.QUANTITIES)),
+            "storey": _s(STOREY, True),
+            "predefined_type": _s("Keep only this predefined type, e.g. FLOOR, ROOF, BASESLAB", True),
+            "is_external": {"type": "boolean", "_optional": True,
+                            "description": "true: exterior elements only; false: interior only"},
+            "only": _s("Return the number for this group only (group label as listed)", True),
+        },
+        "ifc", ifc_tools.ifc_group_quantity,
+    ),
+    Tool(
         "ifc_space_area",
         "Net floor area of ONE named room (IfcSpace).",
         {

@@ -98,6 +98,15 @@ flowchart TB
 
 CubiCasa 中以 `How many` / `Kuinka monta` 开头的计数题会先辨认住宅范围，排除邻居残图，并保留同一住宅的多个楼层。模型每列出一个对象，代码计数一次；评测文件保留完整清单。对象识别仍由模型完成，因此不标记为确定性答案。截断或无效清单记为失败，并保留调用费用。其他问法继续使用通用视觉提示词。
 
+### IFC 分组统计：`ifc_group_quantity`
+
+一个 IFC 类按类型、厚度、材料、楼层、预定义类型（FLOOR/ROOF/BASESLAB）或内外墙分组，每组给出数量、占比、厚度（门窗给尺寸）以及可选的工程量合计，每个构件以 GlobalId 作为证据。传 `only` 时只返回一个组的数值，例如"250 mm 楼板的面积"。
+
+- 厚度依次取自：材料层集合 → Qto `Width` → Pset 中的 Thickness / Dicke / Standarddicke → 几何体积除以投影面积（楼板）或侧面积（墙），几何推算的结果取整到 5 mm 并标 "≈"。
+- 内外墙依次取自：`Pset_*Common.IsExternal` → CAD 图层名，例如 ArchiCAD 的 `Ebene` "Außenwände"。
+- 配筋：报告名称含 Bewehrung / Reinforcement / Rebar 的属性，并统计 `IfcReinforcingBar` 的数量。预览数据里没有真正的钢筋数据，只有保护层（c=2.0cm）这类属性，答案里会如实说明。
+- ifc_bench 同 40 题（seed 0）：文字题得分 51.2% → 63.7%，确定性答案占比 0% → 50%，成本基本不变（每 1000 题 $1.60 → $1.63）。
+
 ## 模型配置与评测
 
 ### CubiCasa 同题对照
