@@ -17,7 +17,13 @@
     "fireplace": { "label": "Fireplace (tulisija)",              "material": 3600, "labour": 1500 },
     "chimney":   { "label": "Chimney, element",                  "material": 2900, "labour": 1300 },
     "stair":     { "label": "Stair flight, prefabricated",       "material": 3800, "labour": 1600 },
-    "railing":   { "label": "Railing section",                   "material": 520,  "labour": 240 }
+    "railing":   { "label": "Railing section",                   "material": 520,  "labour": 240 },
+    "stove":     { "label": "Induction hob / stove, connected",  "material": 700,  "labour": 120 },
+    "fridge":    { "label": "Fridge-freezer, installed",         "material": 800,  "labour": 60 },
+    "radiator":  { "label": "Panel radiator with valve",         "material": 260,  "labour": 220 },
+    "drain":     { "label": "Floor drain, wet room",             "material": 90,   "labour": 160 },
+    "socket":    { "label": "Wall socket, double, flush",        "material": 25,   "labour": 55 },
+    "light":     { "label": "Ceiling light point with fixture",  "material": 80,   "labour": 70 }
   },
   "floor": { "label": "Floor finish (parquet/laminate)", "unit": "m²", "material": 38, "labour": 24 }
 }

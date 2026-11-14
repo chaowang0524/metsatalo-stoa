@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from stoa import pipeline
+from stoa.ui import library
 from stoa.ui import render as render3d
 from stoa.ui import uploads
 from stoa.ui.facts import DATA, OUT
@@ -53,6 +54,12 @@ def index():
 def drawings():
     p = OUT / "index.json"
     return uploads.index() + (json.loads(p.read_text(encoding="utf-8")) if p.exists() else [])
+
+
+@app.get("/api/library")
+def symbol_library():
+    """Real symbols of each component kind from all drawings, to stamp on any plan."""
+    return library.load()
 
 
 @app.post("/api/uploads")
