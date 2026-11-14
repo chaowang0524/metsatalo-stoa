@@ -42,11 +42,11 @@ A five-minute tour:
    - **cubicasa5k**: raster scans. The objects come from a vision model, so
      treat them as a first draft to check.
 2. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
-   doors, windows, fixtures and so on). Hover or click a fact to highlight its
-   objects on the plan. Click the same item again to zoom back out.
+   doors, windows, fixtures and so on). **Hover or click a fact to highlight its
+   objects on the plan. Click the same item again to zoom back out.**
 3. **Edit live.** Add or remove objects right on the plan:
-   - click a component kind in the Facts panel, then click the plan to add one;
-   - right-click an object to remove it;
+   - **click a component kind in the Facts panel, then click the plan to add one;**
+   - **right-click an object to remove it**;
    - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
      real-world size.
 
@@ -56,21 +56,14 @@ A five-minute tour:
    isometric view with Gemini. "↗ Share render" → "Copy to clipboard" drops it
    straight into a chat, an email or a report.
 5. **Human in the loop.** The engineer has the last word on every annotation.
-   On raster scans the objects come from a vision model, so treat them as a
-   first draft: remove false detections and add the ones it missed. Edits are
-   saved on the server per drawing, so the corrected plan is what the next
-   person sees, and what Cost and Export use. Ask uses it too: a count of one
-   component kind takes out the objects the engineer rejected and adds the ones
-   they placed, with no extra LLM call, and is badged "includes engineer
-   corrections". If an answer can't be matched to the plan's objects, it says
-   the edits are not applied.
+   On raster scans the objects come from a vision model, which makes mistakes, so does human. Edits are saved on the server per drawing, so the corrected plan is what the next
+   person sees, and what Cost and Export use. 
 6. **Ask a question.** Click "💬 Ask a question" and type in any language, for
    example *"How many windows are there?"*, *"What is the total area of the
    bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
    badged **exact** (computed from vector or BIM data) or **model answer ·
    verify** (vision). "Highlight references" shows only the evidence it
-   used on the plan, and "Sources and calculation details" lists the method, the tools called and
-   the cost.
+   used on the plan, and "Sources and calculation details" lists the method, the tools called and the cost.
 7. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
    material and labour prices. Each price links to its source (Taloon.com,
    K-Rauta, or published hourly rates). You can overwrite any quantity or price,
@@ -127,15 +120,28 @@ The [Results](#results) table below says what to expect per source. Answers from
 BIM data should match. Scanned plans are a vision model's first draft, which is
 why every object is drawn on the plan for checking.
 
+## Run the full evaluation (for reviewers who want to test the evaluation set)
+
+```bash
+
+uv run python -m stoa.eval --dataset /path/to/full-dataset 
+```
+
+`--dataset` takes any folder with `questions.jsonl` and `data/`, laid out like
+`junction-dataset-preview/`. The run needs the setup and API keys from
+[Run it locally](#run-it-locally). It writes every answer to
+`out/eval_<profile>_<time>.jsonl` and prints accuracy, cost and latency per
+source at the end.
+
 ## Features
 
 | Feature | What it gives the engineer |
 |---|---|
 | Natural-language Q&A, any language | Counts, areas, lengths, volumes and free-text answers about a drawing or IFC model |
 | Evidence on the plan | Each answer highlights the exact CAD entities, IFC elements or table rows it came from |
+| Human correction loop | Add, reject or stamp objects. The facts and the cost update straight away |
 | Deterministic flag | Exact answers are marked as exact. Vision answers are marked as needing a check |
 | Pre-computed facts | Room areas and component counts for every plan, with no LLM cost |
-| Human correction loop | Add, reject or stamp objects. The facts and the cost update straight away |
 | Symbol library | Real door, window and fixture symbols taken from the CAD and IFC data |
 | Sourced cost estimate and quote | Plan quantities × cited Finnish prices, with editable lines and an approval link |
 | Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
