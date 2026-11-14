@@ -504,23 +504,36 @@ async function planPNG(maxSide = 1600) {
   return new Promise((ok) => c.toBlob(ok, "image/png"));
 }
 
-function summaryLine() {
-  return components().filter((f) => valueOf(f) > 0).map((f) => `${f.label} ${valueOf(f)}`).join(" · ");
-}
-function editSummary() {
-  const lines = [];
-  const add = {};
-  for (const a of state.edits.added) add[a.kind] = (add[a.kind] || 0) + 1;
-  for (const [k, n] of Object.entries(add)) lines.push(`+${n} ${k} added on site`);
-  const rej = {};
-  for (const k of state.edits.rejected) { const kind = k.split(":")[0]; rej[kind] = (rej[kind] || 0) + 1; }
-  for (const [k, n] of Object.entries(rej)) lines.push(`−${n} ${k} rejected (not on site)`);
-  return lines;
-}
-const stem = () => state.doc.file.replace(/\.[^.]+$/, "");
-
 let lastRender = null;
-$("#btn-render").onclick = () => $("#render-dlg").showModal();
+$("#btn-render").onclick = () => {
+  const dlg = $("#render-dlg");
+  dlg.style.cssText = ""; // opens centred again
+  dlg.showModal();
+};
+
+// Drag the dialog by its title bar, so the plan behind it stays readable.
+// left/top rather than a transform: a transform would offset the fixed-position share menu inside it.
+{
+  const dlg = $("#render-dlg"), head = dlg.querySelector(".dlg-head");
+  let grab = null;
+  head.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    const r = dlg.getBoundingClientRect();
+    grab = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width };
+    head.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (!grab) return;
+    // Keep the title bar on screen so it can always be grabbed back.
+    const x = Math.min(Math.max(e.clientX - grab.dx, 40 - grab.w), innerWidth - 40);
+    const y = Math.min(Math.max(e.clientY - grab.dy, 0), innerHeight - 40);
+    Object.assign(dlg.style, { margin: "0", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
+  });
+  const drop = () => { grab = null; };
+  head.addEventListener("pointerup", drop);
+  head.addEventListener("pointercancel", drop);
+}
 $("#btn-generate").onclick = async () => {
   const out = $("#render-out");
   const btn = $("#btn-generate");
@@ -570,28 +583,10 @@ async function copyRender() {
     toast(`Could not copy: ${e.message}`, 5000);
   }
 }
-async function emailRender() {
-  const name = `${stem()}_3d.${lastRender.type.split("/")[1] || "png"}`;
-  const title = `3D view: ${state.doc.file}`;
-  const text = [state.doc.file, summaryLine(), ...editSummary(), "",
-    "AI illustration of the plan, not for measurement.", `Source: ${state.doc.credit}`].join("\n");
-  const file = new File([lastRender], name, { type: lastRender.type });
-  // Phones and tablets: the share sheet attaches the file to a new mail directly.
-  if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title, text }); return; }
-    catch (e) { if (e.name === "AbortError") return; }
-  }
-  // mailto can't carry an attachment: save the file, then open the draft to attach it to.
-  const url = URL.createObjectURL(lastRender);
-  h("a", { href: url, download: name }).click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-  location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + `\n\n(Attach ${name}, saved to your downloads.)`)}`;
-  toast(`Saved ${name}: attach it to the email`, 5000);
-}
 $("#btn-share-3d").onclick = (e) => {
   if (!lastRender) return;
   const r = e.currentTarget.getBoundingClientRect();
-  popMenu(r.left, r.bottom + 4, [["Copy to clipboard", copyRender], ["Attach to an email", emailRender]], $("#render-dlg"));
+  popMenu(r.left, r.bottom + 4, [["Copy to clipboard", copyRender]], $("#render-dlg"));
 };
 
 // ---------- cost estimate: plan quantities (with the engineer's edits) × Finnish unit prices ----------
