@@ -31,20 +31,12 @@ The preview dataset's drawings are already loaded. "Ask", "3D" and image
 uploads call paid models, so each click costs a few cents. Everything else runs
 without an LLM.
 
-A five-minute tour:
+A three-minute tour:
 
-1. **Pick a drawing.** Use the search box (`/`) or the ‹ › arrows (← →). Each
-   source shows a different level of confidence:
-   - **swiss_dwellings**: the plan is drawn from the DXF, so highlights are the
-     exact CAD geometry.
-   - **ifc_models**: plans rendered from an IFC model. Answers trace back to IFC
-     elements by `GlobalId`.
-   - **cubicasa5k**: raster scans. The objects come from a vision model, so
-     treat them as a first draft to check.
-2. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
+1. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
    doors, windows, fixtures and so on). **Hover or click a fact to highlight its
    objects on the plan. Click the same item again to zoom back out.**
-3. **Edit live.** Add or remove objects right on the plan:
+2. **Edit live.** Add or remove objects right on the plan:
    - **click a component kind in the Facts panel, then click the plan to add one;**
    - **right-click an object to remove it**;
    - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
@@ -52,36 +44,40 @@ A five-minute tour:
 
    Counts, highlights and the cost estimate update immediately, and ⌘Z undoes
    any edit.
-4. **Render it in 3D.** "◈ 3D" turns the edited plan, edits included, into an
-   isometric view with Gemini. "↗ Share render" → "Copy to clipboard" drops it
-   straight into a chat, an email or a report.
-5. **Human in the loop.** The engineer has the last word on every annotation.
+3. **Human in the loop.** The engineer has the last word on every annotation.
    On raster scans the objects come from a vision model, which makes mistakes, so does human. Edits are saved on the server per drawing, so the corrected plan is what the next
    person sees, and what Cost and Export use. 
-6. **Ask a question.** Click "💬 Ask a question" and type in any language, for
+4. **Ask a question.** Click "💬 Ask a question" and type in any language, for
    example *"How many windows are there?"*, *"What is the total area of the
    bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
    badged **exact** (computed from vector or BIM data) or **model answer ·
    verify** (vision). "Highlight references" shows only the evidence it
    used on the plan, and "Sources and calculation details" lists the method, the tools called and the cost.
-7. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
+5. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
    material and labour prices. Each price links to its source (Taloon.com,
    K-Rauta, or published hourly rates). You can overwrite any quantity or price,
    then "Submit" freezes a quote. Its `/quote/<id>` link lets a client approve
    it, ask for changes, print it or download a CSV.
-8. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF.
-9. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
+6. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF.
+7. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
    files:
    - DXF: exact CAD facts;
    - plan SVG + IFC: BIM facts;
    - PNG, JPG or a scanned PDF: one vision-model pass in the background (about
      1 minute, $0.10–0.18);
-   - other PDFs: Ask only.
+   - other PDFs: the same vision pass on page 1 for the components, plus exact
+     rooms from the PDF text layer when it has room stamps; Ask still reads the
+     PDF itself.
 
    See [Check the results yourself](#check-the-results-yourself) for how to use
    this to test us on your own drawings.
 
-## Check the results yourself
+## Check the results yourself 
+Use the **Web UI**
+
+```bash
+uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
+```
 
 You don't need our evaluation scripts. Take drawings from the dataset, upload
 them in the live demo, and compare what the UI says with the reference answers
@@ -96,7 +92,7 @@ test use drawings from the **full dataset** that we have not seen.
    | swiss_dwellings | `<stem>.pdf` + `<stem>.dxf` | Exact facts from the CAD geometry, in seconds, no LLM |
    | ifc_models | `<model>.ifc` + `<model>_<level>.svg` (and the `.pdf`) | Exact facts from the BIM model, linked by `GlobalId` |
    | cubicasa5k | `<stem>.png` | One vision pass in the background (about 1 minute, ~$0.18), then checkable boxes |
-   | opening_design, other PDFs | `<stem>.pdf` | The PDF as background; use Ask |
+   | opening_design, other PDFs | `<stem>.pdf` | One vision pass on page 1 for checkable component boxes, exact rooms from the text layer when it has room stamps, and Ask on the PDF itself |
 
 2. **Upload.** Click "⤒ Upload" or drag files onto the page. You can drop many
    drawings at once, and each one appears in the drawing list when it is ready.
@@ -123,23 +119,35 @@ why every object is drawn on the plan for checking.
 ## Run the full evaluation (for reviewers who want to test the evaluation set)
 
 ```bash
-
-uv run python -m stoa.eval --dataset /path/to/full-dataset 
+uv run python -m stoa.eval --dataset /path/to/full-dataset
 ```
 
-`--dataset` takes any folder with `questions.jsonl` and `data/`, laid out like
-`junction-dataset-preview/`. The run needs the setup and API keys from
-[Run it locally](#run-it-locally). It writes every answer to
-`out/eval_<profile>_<time>.jsonl` and prints accuracy, cost and latency per
-source at the end.
+`--dataset` takes any folder laid out like `junction-dataset-preview/`: the
+drawings under `data/<source>/`, and a `questions.jsonl` next to it with the
+questions and their reference answers, one per line:
+
+```json
+{"path": "data/cubicasa5k/colorful-11397.png", "question": "How many windows are shown on this floor plan?", "answer": 13, "unit": "count", "type": "count"}
+```
+
+- `path` is relative to the dataset folder, and its second part (`cubicasa5k`)
+  is the source the results are grouped by;
+- `answer` is the reference that the run scores against: counts must match
+  exactly, areas, lengths and volumes must be within 2%, and `text` answers are
+  graded by an LLM judge;
+- `type` is one of `count`, `area`, `length`, `volume` or `text`.
+
+The run needs the setup and API keys from [Run it locally](#run-it-locally).
+It writes every answer to `out/eval_<profile>_<time>.jsonl` and prints
+accuracy, cost and latency per source at the end.
 
 ## Features
 
 | Feature | What it gives the engineer |
 |---|---|
-| Grounded facts, at a glance | Component counts and room areas for every plan are pre-computed and shown on the plan, with no LLM cost. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
-| Live editing on site | Add, remove or stamp doors, windows, fixtures and other components on the plan. Counts update straight away |
-| Cost estimate, faster | Plan quantities × cited Finnish material and labour prices, with editable lines. "Submit" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
+| Grounded facts, at a glance | Engineers can component counts and room areas for every plan as they are pre-computed and straightforwardly shown on the plan. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
+| Live editing on site | Engineers get to add, remove or stamp doors, windows, fixtures and other components on the plan. Counts update straight away |
+| Cost estimate, faster | Engineers get the cost at once with quantities × cited Finnish material and labour prices which are also editable. "Submit" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
 | Human in the loop | The counting, model, the cost and even previous human annotations can be wrong. Every object stays visible and editable, edits are saved per drawing, and ⌘Z undoes them |
 | Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
 | Cost logging | Every model call is logged with its tokens, latency and USD cost (`logs/verda_calls.jsonl`) |
@@ -172,8 +180,7 @@ answer + unit + method + evidence + deterministic flag
 
 Models: DeepSeek routes and composes text answers ($0.15/$0.60 per M tokens),
 Kimi reads PDF schedules and other images, and Gemini reads raster floor plans.
-`PIPELINE.md` has the full flowchart, and `VERDA_LOG.md` records why each
-endpoint was chosen.
+`PIPELINE.md` has the full flowchart, and `VERDA_LOG.md` records why each endpoint was chosen.
 
 ## Results
 
@@ -212,21 +219,6 @@ cp .env.example .env        # then fill in the keys
 The `.env` value takes precedence over an exported `GEMINI_API_KEY`. The
 dataset goes in `junction-dataset-preview/`, which is not in the repository.
 
-**Web UI**
-
-```bash
-uv run python -m stoa.ui.facts                  # once, no LLM: pre-compute facts into out/facts/
-uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
-```
-
-**One question from the command line**
-
-```bash
-uv run python -m stoa.ask junction-dataset-preview/data/swiss_dwellings/site1000_bldg2082_floor9385.pdf "How many windows are drawn on this floor plan?"
-```
-
-This prints JSON with the answer, unit, method, tool calls, evidence and the
-`deterministic` flag.
 
 ## Quick evaluation from the command line
 
