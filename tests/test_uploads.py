@@ -57,6 +57,53 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(vision.call_args.kwargs["endpoint"], "gemini")
         self.assertTrue(vision.call_args.kwargs["floor_plan"])
 
+    def test_pdf_preview_is_published_before_detection(self):
+        for text in ("", "Vector floor plan with an extractable text layer"):
+            with self.subTest(scanned=not text):
+                with uploads.pymupdf.open() as pdf:
+                    page = pdf.new_page(width=400, height=300)
+                    if text:
+                        page.insert_text((20, 30), text)
+                    data = pdf.tobytes()
+                result = uploads.save([("plan.pdf", data)])
+                doc_path = uploads.DOCS / f"{result['drawings'][0].split('/', 1)[1]}.json"
+                doc = json.loads(doc_path.read_text(encoding="utf-8"))
+                self.assertEqual(doc["view"]["background"], "")
+
+                def detect(png, *args):
+                    preview = json.loads(doc_path.read_text(encoding="utf-8"))
+                    self.assertEqual(preview["status"], "processing")
+                    self.assertEqual(preview["facts"], [])
+                    self.assertEqual(preview["view"]["background"], f"/uploads/{png.name}")
+                    with Image.open(png) as image:
+                        self.assertEqual((preview["view"]["width"], preview["view"]["height"]), image.size)
+                    row = next(r for r in uploads.index() if r["id"] == doc["id"])
+                    self.assertEqual(row["status"], "processing")
+                    self.assertEqual(row["background"], preview["view"]["background"])
+                    return {"view": preview["view"], "facts": []}
+
+                with patch.object(uploads, "_detect", side_effect=detect) as detection:
+                    uploads._process(doc)
+                detection.assert_called_once()
+                completed = json.loads(doc_path.read_text(encoding="utf-8"))
+                self.assertEqual(completed["status"], "done")
+                self.assertTrue(completed["view"]["background"].endswith(".png"))
+
+    def test_failed_pdf_detection_keeps_the_preview(self):
+        with uploads.pymupdf.open() as pdf:
+            pdf.new_page(width=400, height=300)
+            data = pdf.tobytes()
+        result = uploads.save([("plan.pdf", data)])
+        doc_path = uploads.DOCS / f"{result['drawings'][0].split('/', 1)[1]}.json"
+        doc = json.loads(doc_path.read_text(encoding="utf-8"))
+        with patch.object(uploads, "_detect", side_effect=RuntimeError("detection unavailable")):
+            uploads._process(doc)
+        failed = json.loads(doc_path.read_text(encoding="utf-8"))
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("detection unavailable", failed["error"])
+        self.assertTrue(failed["view"]["background"].endswith(".png"))
+        self.assertEqual(uploads.index()[0]["background"], failed["view"]["background"])
+
 
 class PdfRoomTests(unittest.TestCase):
     def test_room_stamps_match_the_reference_counts(self):

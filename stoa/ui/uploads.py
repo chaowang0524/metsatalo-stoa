@@ -70,12 +70,18 @@ def index() -> list[dict]:
 def _write(doc: dict) -> None:
     stem = doc["id"].split("/", 1)[1]
     DOCS.mkdir(parents=True, exist_ok=True)
-    (DOCS / f"{stem}.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    doc_path = DOCS / f"{stem}.json"
+    pending = doc_path.with_suffix(".json.tmp")
+    pending.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    pending.replace(doc_path)
     entry = {"id": doc["id"], "source": "uploads", "file": doc["file"], "status": doc["status"],
+             "background": doc["view"]["background"],
              "summary": {f["id"]: f["value"] for f in doc["facts"] if f["group"] == "Components"}}
     with _lock:
         rows = [r for r in index() if r["id"] != doc["id"]] + [entry]
-        INDEX.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+        pending_index = INDEX.with_suffix(".json.tmp")
+        pending_index.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+        pending_index.replace(INDEX)
 
 
 def save(files: list[tuple[str, bytes]]) -> dict:
@@ -177,12 +183,16 @@ def _facts(doc: dict) -> dict:
         return {"view": f["view"], "facts": f["facts"], "ifc": f.get("ifc"), "storey": f.get("storey")}
     if kind == "pdf":
         png, zoom = _render_page(path)
+        with Image.open(png) as image:
+            w, h = image.size
+        # Publish the page while Gemini is still working so the UI can preview it.
+        doc["view"] = {"width": w, "height": h, "background": f"/uploads/{png.name}"}
+        _write(doc)
         info = inspect_file(path)
         if info.ifc or info.dxf:
             # A sheet rendered from an uploaded model: Ask answers from the IFC exactly,
             # so a Gemini guess at the same objects would only cost money.
-            w, h = Image.open(png).size
-            return {"view": {"width": w, "height": h, "background": f"/uploads/{png.name}"}, "facts": []}
+            return {"view": doc["view"], "facts": []}
         if info.kind != "raster":
             # Vector sheet: Gemini finds the components on the rendered page; rooms come
             # from the text layer when it has room stamps. Ask keeps the PDF itself, so

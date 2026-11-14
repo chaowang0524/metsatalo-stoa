@@ -118,12 +118,13 @@ function watchUploads() {
       const fresh = Object.fromEntries((await (await fetch("/api/drawings")).json()).map((d) => [d.id, d]));
       for (const d of drawings) {
         const n = fresh[d.id];
-        if (!n || n.status === d.status) continue;
+        if (!n || (n.status === d.status && n.background === d.background)) continue;
+        const statusChanged = n.status !== d.status;
         Object.assign(d, n);
         const opt = [...$("#picker").options].find((o) => o.value === d.id);
         if (opt) opt.textContent = optionText(d);
-        if (state.doc?.id === d.id) loadDoc(d.id);
-        else toast(`${d.file}: ${d.status === "done" ? "facts ready" : "facts failed"}`);
+        if (state.doc?.id === d.id) await loadDoc(d.id);
+        else if (statusChanged) toast(`${d.file}: ${d.status === "done" ? "facts ready" : "facts failed"}`);
       }
     } catch { /* try again on the next tick */ }
     watchUploads();
