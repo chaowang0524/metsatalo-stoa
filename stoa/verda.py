@@ -19,7 +19,7 @@ LOG_PATH = Path(os.environ.get("VERDA_LOG", "logs/verda_calls.jsonl"))
 def _load_dotenv(path: Path = Path(".env")) -> None:
     """Fill os.environ from a gitignored .env file, without overriding."""
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
             k, sep, v = line.strip().partition("=")
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip().strip("'\""))
@@ -88,7 +88,7 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
             **(context or {}),
         }
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with LOG_PATH.open("a") as f:
+        with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 

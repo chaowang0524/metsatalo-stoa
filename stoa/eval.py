@@ -37,7 +37,8 @@ def score(q: dict, value) -> bool | None:
 
 
 def load(args) -> list[dict]:
-    qs = [json.loads(l) for l in (DATASET / "questions.jsonl").open()]
+    with (DATASET / "questions.jsonl").open(encoding="utf-8-sig") as f:
+        qs = [json.loads(l) for l in f]
     for i, q in enumerate(qs):
         q["id"] = i
         q["source"] = q["path"].split("/")[1]
@@ -90,7 +91,7 @@ def main() -> None:
     print(f"{len(qs)} questions -> {out_path}")
 
     rows = []
-    with ThreadPoolExecutor(args.workers) as pool, out_path.open("w") as f:
+    with ThreadPoolExecutor(args.workers) as pool, out_path.open("w", encoding="utf-8") as f:
         for i, row in enumerate(pool.map(run_one, qs), 1):
             rows.append(row)
             f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")

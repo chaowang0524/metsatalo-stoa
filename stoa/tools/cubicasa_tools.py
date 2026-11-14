@@ -98,7 +98,7 @@ def analyse(path: str | Path) -> dict:
     path = Path(path)
     cached = CACHE / f"{path.stem}.json"
     if cached.exists():
-        return json.loads(cached.read_text())
+        return json.loads(cached.read_text(encoding="utf-8-sig"))
     with _lock:  # one drawing at a time on the GPU
         _load()
         from floortrans.post_prosessing import get_polygons, split_prediction
@@ -124,7 +124,7 @@ def analyse(path: str | Path) -> dict:
                   for g in getattr(p, "geoms", [p])],
     }
     CACHE.mkdir(parents=True, exist_ok=True)
-    cached.write_text(json.dumps(out))
+    cached.write_text(json.dumps(out), encoding="utf-8")
     return out
 
 

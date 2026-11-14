@@ -34,14 +34,15 @@ RULES = {
 def splits() -> dict[str, str]:
     out = {}
     for s in ("train", "val", "test"):
-        for line in (REPO / f"data/cubicasa5k/{s}.txt").read_text().split():
+        for line in (REPO / f"data/cubicasa5k/{s}.txt").read_text(encoding="utf-8-sig").split():
             out[line.strip("/").replace("/", "-")] = s
     return out
 
 
 def main() -> None:
     split = splits()
-    qs = [json.loads(l) for l in (DATASET / "questions.jsonl").open()]
+    with (DATASET / "questions.jsonl").open(encoding="utf-8-sig") as f:
+        qs = [json.loads(l) for l in f]
     hits = collections.defaultdict(lambda: collections.defaultdict(list))
     off = collections.defaultdict(list)  # signed error on unseen drawings
     for q in qs:

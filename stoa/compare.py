@@ -42,10 +42,11 @@ def judge(q: str, gt: str, a: str) -> float:
 def main() -> None:
     runs = {}
     for p in sys.argv[1:]:
-        rows = [json.loads(l) for l in open(p)]
+        with open(p, encoding="utf-8-sig") as f:
+            rows = [json.loads(l) for l in f]
         runs[rows[0].get("router") or Path(p).stem] = {r["qid"]: r for r in rows}
     common = set.intersection(*(set(r) for r in runs.values()))
-    cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
+    cache = json.loads(CACHE.read_text(encoding="utf-8-sig")) if CACHE.exists() else {}
 
     todo = []
     for name, rows in runs.items():
@@ -60,7 +61,7 @@ def main() -> None:
     with ThreadPoolExecutor(8) as pool:
         for key, s in zip([t[0] for t in todo], pool.map(lambda t: judge(*t[1:]) if t[3] else 0.0, todo)):
             cache[key] = s
-    CACHE.write_text(json.dumps(cache))
+    CACHE.write_text(json.dumps(cache), encoding="utf-8")
 
     sources = sorted({runs[next(iter(runs))][q]["source"] for q in common})
     print(f"{len(common)} common questions; text answers judged by deepseek against the reference\n")
