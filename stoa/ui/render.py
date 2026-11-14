@@ -6,17 +6,16 @@ it has its own call log, logs/image_calls.jsonl, with the same fields.
 
 import base64
 import json
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from google.genai import types
 
+from endpoints.Google import gemini
 from stoa import verda  # noqa: F401  (loads .env)
 
-MODEL = os.environ.get("STOA_IMAGE_MODEL", "gemini-3.1-flash-image")
-URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+MODEL = gemini.MODEL
 LOG_PATH = Path("logs/image_calls.jsonl")
 
 STYLES = {
@@ -36,25 +35,18 @@ and do not show the boxes or numbers themselves. Do not add or remove rooms."""
 def render(png: bytes, style: str = "isometric", context: dict | None = None) -> dict:
     """Returns {"image": data URL, "model", "latency_s", "usage"}."""
     t0 = time.perf_counter()
-    body = {
-        "contents": [{"parts": [
-            {"text": PROMPT.format(style=STYLES.get(style, STYLES["isometric"]))},
-            {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}},
-        ]}],
-        "generationConfig": {"responseModalities": ["IMAGE"]},
-    }
     error, usage, out = None, {}, None
     try:
-        r = requests.post(URL.format(model=MODEL), json=body, timeout=180,
-                          headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]})
-        data = r.json()
-        if r.status_code != 200:
-            raise RuntimeError(data.get("error", {}).get("message", r.text[:300]))
-        usage = data.get("usageMetadata", {})
-        for part in data["candidates"][0]["content"]["parts"]:
-            if inline := part.get("inlineData") or part.get("inline_data"):
-                mime = inline.get("mimeType") or inline.get("mime_type", "image/png")
-                out = f"data:{mime};base64,{inline['data']}"
+        resp = gemini.client().models.generate_content(
+            model=MODEL,
+            contents=[PROMPT.format(style=STYLES.get(style, STYLES["isometric"])),
+                      types.Part.from_bytes(data=png, mime_type="image/png")],
+            config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+        )
+        usage = resp.usage_metadata.model_dump(by_alias=True, exclude_none=True, mode="json") if resp.usage_metadata else {}
+        for part in resp.candidates[0].content.parts if resp.candidates else []:
+            if part.inline_data:
+                out = f"data:{part.inline_data.mime_type};base64,{base64.b64encode(part.inline_data.data).decode()}"
                 break
         if out is None:
             raise RuntimeError("model returned no image")

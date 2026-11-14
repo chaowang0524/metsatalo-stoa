@@ -17,7 +17,7 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 ## Web UI (`stoa/ui/`)
 
 - `uv run python -m stoa.ui.facts` pre-computes the facts for every swiss_dwellings and cubicasa5k drawing (~10 s, no LLM) into `out/facts/`. Swiss plans are rendered from the DXF to SVG, so highlights use exact CAD geometry. CubiCasa plans use the cached detector boxes.
-- `source ~/.zshrc && uv run uvicorn stoa.ui.server:app --port 8000` starts the server. The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini (`GEMINI_API_KEY`).
+- `source ~/.zshrc && uv run uvicorn stoa.ui.server:app --port 8000` starts the server. The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini `gemini-nano-banana-2.1` (`endpoints/Google/gemini.py`, key in the `GEMINI` env var from `~/.zshrc`).
 
 ## Verda endpoints
 
