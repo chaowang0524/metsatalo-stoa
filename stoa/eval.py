@@ -44,8 +44,6 @@ def load(args) -> list[dict]:
         q["source"] = q["path"].split("/")[1]
     if args.source:
         qs = [q for q in qs if q["source"] == args.source]
-    if args.skip:
-        qs = [q for q in qs if q["source"] not in args.skip.split(",")]
     rng = random.Random(args.seed)
     if args.per_source:
         by = collections.defaultdict(list)
@@ -54,6 +52,9 @@ def load(args) -> list[dict]:
         qs = [q for g in by.values() for q in rng.sample(g, min(args.per_source, len(g)))]
     elif args.limit:
         qs = rng.sample(qs, min(args.limit, len(qs)))
+    # Skip after sampling, so the other sources get the same questions as a full run.
+    if args.skip:
+        qs = [q for q in qs if q["source"] not in args.skip.split(",")]
     return qs
 
 

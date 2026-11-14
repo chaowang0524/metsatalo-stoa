@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stoa Plan Check</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Stoa <span>Plan Check</span></div>
+  <select id="picker" aria-label="Drawing"></select>
+  <div class="actions">
+    <button id="btn-edit" class="tool" aria-pressed="false" title="Add or reject objects on the plan">✎ Edit</button>
+    <button id="btn-render" class="tool" title="AI 3D render of the edited plan">◈ 3D</button>
+    <button id="btn-share" class="tool" title="Share the annotated plan">↗ Share</button>
+  </div>
+</header>
+
+<main>
+  <section id="stage">
+    <svg id="plan" xmlns="http://www.w3.org/2000/svg">
+      <image id="bg" preserveAspectRatio="none"/>
+      <g id="layer-all"></g>
+      <g id="layer-edits"></g>
+      <g id="layer-hl"></g>
+    </svg>
+    <div id="palette" hidden>
+      <span class="hint">Tap the plan to add</span>
+      <div id="palette-kinds"></div>
+      <span class="hint">Tap a detected object to reject it, tap again to restore.</span>
+      <button id="btn-undo" class="small">Undo</button>
+    </div>
+    <div class="zoom">
+      <button id="z-in" aria-label="Zoom in">+</button>
+      <button id="z-out" aria-label="Zoom out">−</button>
+      <button id="z-fit" aria-label="Fit">⤢</button>
+    </div>
+    <div id="credit"></div>
+  </section>
+
+  <aside id="panel">
+    <div class="doc-head">
+      <h1 id="doc-title"></h1>
+      <div id="doc-meta"></div>
+    </div>
+    <div id="facts"></div>
+
+    <div id="ask">
+      <div id="thread"></div>
+      <form id="ask-form" hidden>
+        <input id="ask-input" placeholder="Ask about this drawing, any language" autocomplete="off">
+        <button type="submit">Ask</button>
+      </form>
+      <button id="btn-ask" class="ask-open">💬 Ask a question</button>
+    </div>
+  </aside>
+</main>
+
+<dialog id="render-dlg">
+  <form method="dialog" class="dlg-head">
+    <strong>3D render</strong>
+    <button aria-label="Close">✕</button>
+  </form>
+  <div class="styles">
+    <label><input type="radio" name="style" value="isometric" checked> Isometric</label>
+    <label><input type="radio" name="style" value="photoreal"> Photoreal</label>
+    <label><input type="radio" name="style" value="massing"> Massing</label>
+    <button id="btn-generate">Generate</button>
+  </div>
+  <div id="render-out"><p class="muted">Renders the plan as you edited it. AI illustration only: use the plan for counts and measurements.</p></div>
+  <div class="dlg-foot"><button id="btn-share-3d" disabled>↗ Share render</button></div>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

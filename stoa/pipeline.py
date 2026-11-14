@@ -23,6 +23,7 @@ from stoa.inspect_file import FileInfo, inspect_file
 from stoa.tools import dxf_tools, ifc_tools, pdf_tools, vision_tools
 
 MAX_TURNS = 4
+MAX_EVIDENCE_IDS = 300  # per tool output, so a huge element table can't blow up the prompt
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,9 @@ class Tool:
     source: str  # which FileInfo attribute the tool reads: "ifc" | "dxf" | "pdf" | "image"
     fn: Callable
     terminal: bool = True
+    # List the output's evidence with ids the LLM cites. Off where the evidence
+    # just repeats the payload (page text lines), which doubles the prompt.
+    cite: bool = True
 
     def spec(self) -> dict:
         props = {
@@ -169,7 +173,7 @@ TOOLS = [
         "Text of a PDF sheet, with table rows on one line. Use for schedules, legends "
         "and notes; you then compute the answer from the text.",
         {"page": {"type": "integer", "description": "0-based page", "_optional": True}},
-        "pdf", pdf_tools.pdf_page_text, terminal=False,
+        "pdf", pdf_tools.pdf_page_text, terminal=False, cite=False,
     ),
     Tool(
         "ask_vision_model",
@@ -188,8 +192,8 @@ Rules:
 - For breakdowns or comparisons, call several tools in one turn, then combine their results.
 - Questions can be in any language. Keep quoted names (rooms, storeys, labels) exactly as written.
 - After an info tool (facts, room list, page text), work out the answer from its output and reply with JSON only:
-  {{"answer": <number or short text>, "unit": <"count"|"m2"|"m3"|"m"|"ft2"|null>, "explanation": "<one sentence citing the rows or items used>"}}
-  For counts and areas, "answer" must be a bare number."""
+  {{"answer": <number or short text>, "unit": <"count"|"m2"|"m3"|"m"|"ft2"|null>, "explanation": "<one sentence citing the rows or items used>", "evidence": [<ids such as "e3" of exactly the items your answer counts, sums or cites>]}}
+  For counts and areas, "answer" must be a bare number. When a tool output ends with an evidence id list, cite ids from it; a count of N cites N ids."""
 
 
 @dataclass
@@ -247,6 +251,29 @@ def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> An
     return tool.fn(_source_path(tool, info), **args)
 
 
+def _evidence_index(evs: list, start: int) -> str:
+    """Short ids (e1, e2, ...) the composing LLM cites, so the UI can show only those."""
+    lines = []
+    for i, e in enumerate(evs[:MAX_EVIDENCE_IDS], start):
+        val = f" = {e.value}" if e.value is not None and not isinstance(e.value, (dict, list)) else ""
+        lines.append(f"e{i} {str(e.label)[:60]}{val}")
+    if len(evs) > MAX_EVIDENCE_IDS:
+        lines.append(f"... {len(evs) - MAX_EVIDENCE_IDS} more not listed")
+    return "\nEvidence ids:\n" + "\n".join(lines) if lines else ""
+
+
+def _cited(evidence: list, ids) -> list:
+    """The evidence items the LLM cited. No list given: keep everything, as before."""
+    if not isinstance(ids, list):
+        return evidence
+    picked = []
+    for i in ids:
+        s = str(i).strip().lower().lstrip("e")
+        if s.isdigit() and 1 <= int(s) <= len(evidence) and evidence[int(s) - 1] not in picked:
+            picked.append(evidence[int(s) - 1])
+    return picked
+
+
 def answer(path: str | Path, question: str, context: dict | None = None, router: str | None = None) -> Result:
     router = router or ROUTER
     prof = PROFILES[router]
@@ -292,7 +319,7 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
             res.answer = Answer(
                 value=data["answer"], unit=data.get("unit"),
                 method="LLM answer from tool output: " + ", ".join(c["tool"] for c in res.calls),
-                deterministic=False, evidence=evidence,
+                deterministic=False, evidence=_cited(evidence, data.get("evidence")),
                 note=str(data.get("explanation", ""))[:500],
             )
             return res
@@ -316,10 +343,11 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
             if out.usage:
                 res.add_usage(out.usage)
             outputs.append((tool, out))
+            index = _evidence_index(out.evidence, len(evidence) + 1) if tool.cite else ""
             evidence += out.evidence
             payload = out.value if not tool.terminal else out.summary(max_evidence=20)
             content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": content[:15000]})
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": content[:15000] + index})
         # The common case: the first call was a single deterministic tool. Its
         # result is the answer, with no second LLM call.
         if turn == 0 and len(msg.tool_calls) == 1 and outputs and outputs[0][0].terminal:

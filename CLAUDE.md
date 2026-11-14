@@ -14,6 +14,11 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 - `PIPELINE.md` describes the current answering pipeline and benchmark results. `VERDA_LOG.md` records each endpoint decision and finding with a date. Add a line there when you learn something about an endpoint.
 - Credentials: `secreat.toml` and `.env` (gitignored, holds `NEMOTRON_API_KEY`, loaded by `stoa/verda.py`). `VERDA_KIMI` is exported in `~/.zshrc`, so run `source ~/.zshrc` before Kimi calls from a non-interactive shell. Never print or commit any of these.
 
+## Web UI (`stoa/ui/`)
+
+- `uv run python -m stoa.ui.facts` pre-computes the facts for every swiss_dwellings and cubicasa5k drawing (~10 s, no LLM) into `out/facts/`. Swiss plans are rendered from the DXF to SVG, so highlights use exact CAD geometry. CubiCasa plans use the cached detector boxes.
+- `source ~/.zshrc && uv run uvicorn stoa.ui.server:app --port 8000` starts the server. The engineer's edits (added/rejected objects) are saved to `out/edits/`. "Ask" runs `stoa.pipeline`. "3D" calls Gemini (`GEMINI_API_KEY`).
+
 ## Verda endpoints
 
 - Every LLM call goes through `stoa.verda.chat(purpose, messages, endpoint=...)`, which appends one line per call (tokens, latency, `cost_usd`) to `logs/verda_calls.jsonl`. Don't call the OpenAI client directly. Each endpoint is one module in `endpoints/verda/` with `MODEL`, prices and `DEFAULTS`.
@@ -41,3 +46,6 @@ A preview subset of the full dataset (~14k drawings, ~120k questions). Treat it 
 - Formats on disk: jpg, png, pdf, dxf, dwg, svg, ifc. Sources without questions (habs, finna, europeana, wikimedia) are historic or scanned drawings, useful only for qualitative demos.
 - Licences are per file in `data/<source>/LICENSE.md`. Keep the credit when displaying a drawing. cubicasa5k is NC-SA.
 - `junction-dataset-preview.zip` (~478 MB) is the original archive. Don't unzip it over the extracted folder.
+
+## Target users:
+Onsite construction engineers 

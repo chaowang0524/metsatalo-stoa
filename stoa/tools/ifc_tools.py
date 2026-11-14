@@ -326,10 +326,12 @@ def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None) -> A
         key = json.dumps(row, sort_keys=True, default=str)
         g = groups.setdefault(key, {**row, "count": 0})
         g["count"] += 1
+        main = None  # the element's own first quantity (a room's area), for per-element questions
         for q in _row_quantities(ifc_class):
             if qv := _quantity(path, e, q)[0]:
                 g[f"total_{q}"] = round(g.get(f"total_{q}", 0) + qv, 3)
-        evidence.append(Evidence(ref=e.GlobalId, label=_label(e)))
+                main = round(qv, 2) if main is None else main
+        evidence.append(Evidence(ref=e.GlobalId, label=_label(e), value=main))
     rows = sorted(groups.values(), key=lambda g: -g["count"])[:120]
     return Answer(
         value={"elements": len(elems), "groups": len(groups), "rows": rows},
