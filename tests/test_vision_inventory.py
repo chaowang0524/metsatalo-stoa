@@ -85,3 +85,41 @@ class InventoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WindowCountTests(unittest.TestCase):
+    def _ask(self, reply, boxes):
+        response = SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop",
+            message=SimpleNamespace(content=json.dumps(reply)))])
+        with patch.object(vision, "detector_windows", return_value=boxes), \
+             patch.object(vision, "_window_image", return_value=(b"png", (1000, 500))), \
+             patch.object(verda, "chat", return_value=response), \
+             patch.object(verda, "usage_of", return_value={"cost_usd": 0.01}):
+            return vision.ask_vision_model("data/cubicasa5k/a.png", "Kuinka monta ikkunaa?", endpoint="gemini")
+
+    def test_confirmed_boxes_plus_added_points(self):
+        boxes = [[10, 10, 20, 20], [30, 30, 40, 40], [50, 50, 60, 60]]
+        result = self._ask({"scope": "main flat",
+                            "boxes": [{"id": 1, "accept": True}, {"id": 2, "accept": False},
+                                      {"id": 3, "accept": True}, {"id": 3, "accept": True}],
+                            "added": [{"where": "bedroom, north wall", "point": [500, 250]}]}, boxes)
+        self.assertEqual(result.value, 3)
+        # Confirmed boxes keep the UI's fact refs; added ones are placed from the point.
+        self.assertEqual([e.ref for e in result.evidence], ["window-0", "window-2", "window+1"])
+        self.assertEqual(result.evidence[2].bbox, (238.0, 238.0, 262.0, 262.0))
+        self.assertFalse(result.deterministic)
+
+    def test_box_that_does_not_exist_is_dropped(self):
+        result = self._ask({"scope": "A", "boxes": [{"id": 1, "accept": True}, {"id": 9, "accept": True}],
+                            "added": []}, [[0, 0, 5, 5]])
+        self.assertEqual(result.value, 1)
+        self.assertIn("[9]", result.note)
+
+    def test_without_detector_the_model_places_every_window(self):
+        result = self._ask({"scope": "A", "added": [{"where": "kitchen", "point": [100, 100]}]}, None)
+        self.assertEqual(result.value, 1)
+        self.assertEqual(result.evidence[0].ref, "window+1")
+
+    def test_malformed_point_fails(self):
+        with self.assertRaises(vision.VisionResponseError):
+            self._ask({"scope": "A", "boxes": [], "added": [{"where": "x", "point": [1200, 5]}]}, [])

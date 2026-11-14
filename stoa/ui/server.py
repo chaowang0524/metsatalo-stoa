@@ -100,7 +100,9 @@ async def ask(q: Ask):
     frame = doc["view"].get("dxf_frame")
     seen, out["items"] = set(), []
     for e in (res.answer.evidence if res.answer else []):
-        shape = shapes.get(e.ref) or ({"bbox": _to_view(e.bbox, frame)} if frame and e.bbox else None)
+        # Without a DXF frame, evidence boxes are already in view units (CubiCasa
+        # PNG pixels, e.g. windows the vision model added).
+        shape = shapes.get(e.ref) or ({"bbox": _to_view(e.bbox, frame)} if e.bbox and (frame or source == "cubicasa5k") else None)
         if shape and e.ref not in seen:
             seen.add(e.ref)
             out["items"].append({"ref": e.ref, "label": e.label, "value": e.value, "shape": shape})

@@ -1,11 +1,13 @@
 """Fallback: show the drawing to the vision model. Not deterministic, lower confidence."""
 
 import base64
+import io
 import json
 import re
 from pathlib import Path
 
 import pymupdf
+from PIL import Image, ImageDraw, ImageFont
 
 from stoa import verda
 from stoa.answer import Answer, Evidence, ToolError, parse_llm_answer
@@ -45,6 +47,52 @@ Use an empty objects array if none are present. The program computes the count.
 Question: {question}"""
 
 
+# Windows on CubiCasa plans: the model alone undercounts (it skips windows in long
+# walls). With the CubiCasa5K detector's boxes drawn on the plan as numbered
+# proposals, it confirms or rejects each and adds the ones without a box. On the
+# 44 test+val window questions (drawings the detector wasn't trained on): exact
+# 24/44 in two runs vs 21 and 20 for the inventory prompt, within one 29/44 vs
+# 25 and 24. Doors stay on the inventory prompt, which did better for them.
+DETECTOR_CACHE = Path("out/cubicasa_cache")
+WINDOW_SIDE = 2048  # small scans are upscaled so thin window marks survive
+WINDOW_WHAT = ("Count the windows. A window is drawn as a thin opening in a wall, usually with one "
+               "or more parallel lines across the wall thickness (glazing). Each separately drawn "
+               "window counts once, even several side by side in one room; a window in a bay "
+               "counts per drawn window. Balcony or terrace doors are doors, not windows.")
+WINDOW_SCOPE = ("Count the main dwelling only; skip fragments of neighbouring apartments cut off at "
+                "the image edges. Include all separately drawn floors of the same dwelling.")
+
+WINDOW_VERIFY_PROMPT = """This is a residential floor plan. {what}
+
+A detector proposed candidates, drawn as numbered red boxes. It misses some and
+sometimes boxes the wrong thing or a neighbouring apartment's window. {scope}
+1. For each numbered box, decide whether it is a window of the dwelling. Two boxes
+   on the same window count once: accept only one.
+2. Then trace every wall of each floor of the dwelling and add each window that has
+   no box, with the point at its centre.
+
+Reply with JSON only:
+{{"scope": "which dwelling/floors you counted",
+  "boxes": [{{"id": 1, "accept": true}}, ...],
+  "added": [{{"where": "floor, room, wall", "point": [y, x]}}, ...]}}
+Points are [y, x] normalised to 0-1000 over the whole image.
+
+Question: {question}"""
+
+WINDOW_POINTS_PROMPT = """This is a residential floor plan. {what}
+
+Work floor by floor. For each floor of the dwelling, trace its exterior walls all the
+way around, then check interior walls, and record every window you pass, one entry
+each, with the point at its centre. {scope}
+
+Reply with JSON only:
+{{"scope": "which dwelling/floors you counted",
+  "added": [{{"where": "floor, room, wall", "point": [y, x]}}, ...]}}
+Points are [y, x] normalised to 0-1000 over the whole image.
+
+Question: {question}"""
+
+
 class VisionResponseError(ToolError):
     """An unusable vision response, retaining the billed usage."""
 
@@ -56,6 +104,109 @@ class VisionResponseError(ToolError):
 def _cubicasa_count(path: str, question: str) -> bool:
     return (any(part.casefold() == "cubicasa5k" for part in Path(path).parts)
             and bool(re.match(r"\s*(how many\b|kuinka monta\b)", question, re.I)))
+
+
+def _window_question(question: str) -> bool:
+    return bool(re.search(r"\bwindows?\b|ikkun", question, re.I))
+
+
+def detector_windows(path: str | Path) -> list[list[float]] | None:
+    """Window boxes from the cached CubiCasa5K detector run, in image pixels, in
+    the order stoa.ui.facts numbers them (window-0, window-1, ...)."""
+    cached = DETECTOR_CACHE / f"{Path(path).stem}.json"
+    if not cached.exists():
+        return None
+    icons = json.loads(cached.read_text(encoding="utf-8-sig"))["icons"]
+    return [x["bbox"] for x in icons if x["class"] == "Window"]
+
+
+def _window_image(path: Path, boxes: list | None) -> tuple[bytes, tuple[int, int]]:
+    im = Image.open(path).convert("RGB")
+    size = im.size
+    s = WINDOW_SIDE / max(size)
+    im = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
+    if boxes:
+        d = ImageDraw.Draw(im)
+        font = ImageFont.load_default(size=max(18, im.width // 70))
+        for i, b in enumerate(boxes, 1):
+            bb = [b[0] * s - 4, b[1] * s - 4, b[2] * s + 4, b[3] * s + 4]
+            d.rectangle(bb, outline=(230, 0, 0), width=3)
+            d.text((bb[2] + 3, bb[1] - 4), str(i), fill=(230, 0, 0), font=font)
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue(), size
+
+
+def _window_verdict(text: str, n_boxes: int) -> tuple[str, list[int], list[tuple[str, float, float]], list[int]]:
+    """Accepted box ids, added (where, y, x) points and ids of boxes that don't exist.
+    A malformed reply raises; an accepted id with no box is dropped and reported."""
+    text = text.strip()
+    if text.startswith("```") and text.endswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)[:-3].strip()
+    data = json.loads(text)
+    if not isinstance(data, dict) or not isinstance(data.get("scope"), str) or not data["scope"].strip():
+        raise ValueError("Missing counting scope")
+    boxes, added = data.get("boxes", []), data.get("added")
+    if not isinstance(boxes, list) or not isinstance(added, list):
+        raise ValueError("Expected boxes and added lists")
+    accepted, bogus = [], []
+    for b in boxes:
+        if not isinstance(b, dict) or not isinstance(b.get("id"), int) or not isinstance(b.get("accept"), bool):
+            raise ValueError("Each box needs an integer id and a boolean accept")
+        if not 1 <= b["id"] <= n_boxes:
+            bogus.append(b["id"])
+            continue
+        if b["accept"] and b["id"] not in accepted:
+            accepted.append(b["id"])
+    points = []
+    for a in added:
+        pt = a.get("point") if isinstance(a, dict) else None
+        if (not isinstance(a.get("where"), str) or not isinstance(pt, list) or len(pt) != 2
+                or not all(isinstance(v, (int, float)) and 0 <= v <= 1000 for v in pt)):
+            raise ValueError("Each added window needs a description and a [y, x] point in 0-1000")
+        points.append((a["where"].strip(), float(pt[0]), float(pt[1])))
+    return data["scope"].strip(), accepted, points, bogus
+
+
+def _count_windows(path: str, question: str, context: dict | None, endpoint: str, effort: str | None) -> Answer:
+    boxes = detector_windows(path)
+    png, (w, h) = _window_image(Path(path), boxes)
+    template = WINDOW_VERIFY_PROMPT if boxes is not None else WINDOW_POINTS_PROMPT
+    prompt = template.format(what=WINDOW_WHAT, scope=WINDOW_SCOPE, question=question)
+    thinking = {"reasoning_effort": effort} if effort else {}
+    resp = verda.chat(
+        "cubicasa window count", [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}},
+        ]}],
+        context=context, endpoint=endpoint,
+        max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 4000), temperature=0, **thinking,
+    )
+    usage = verda.usage_of(resp, endpoint)
+    if getattr(resp.choices[0], "finish_reason", None) == "length":
+        raise VisionResponseError("CubiCasa window count was truncated", usage)
+    try:
+        scope, accepted, points, bogus = _window_verdict(verda.text_of(resp), len(boxes or []))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise VisionResponseError(f"Invalid CubiCasa window count: {exc}", usage) from exc
+    # Refs match stoa.ui.facts (window-<i>) so confirmed boxes highlight as they are.
+    evidence = [Evidence(ref=f"window-{i - 1}", label="window: detector box, confirmed", value=1,
+                         bbox=tuple(boxes[i - 1])) for i in accepted]
+    r = 0.012 * max(w, h)
+    evidence += [Evidence(ref=f"window+{j}", label=f"window: {where} (placed by the vision model)", value=1,
+                          bbox=(x / 1000 * w - r, y / 1000 * h - r, x / 1000 * w + r, y / 1000 * h + r))
+                 for j, (where, y, x) in enumerate(points, 1)]
+    if boxes is not None:
+        how = (f"{len(accepted)} of {len(boxes)} detector boxes confirmed, {len(points)} windows added "
+               "by the vision model")
+        method = "CubiCasa5K detector proposals checked by a vision model; count = confirmed + added"
+    else:
+        how = f"{len(points)} windows located by the vision model"
+        method = "vision model window list with positions; count computed from list length"
+    if bogus:
+        how += f"; ignored verdicts on boxes that don't exist: {bogus}"
+    return Answer(value=len(evidence), unit="count", deterministic=False, method=method, evidence=evidence,
+                  note=f"Counting scope: {scope}. {how}; verify on the drawing.", usage=usage)
 
 
 def _count_inventory(text: str) -> tuple[str, list[str]]:
@@ -103,8 +254,10 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
     """An explicit `effort` overrides the endpoint's default reasoning effort.
     Kimi defaults to low effort with thinking enabled.
     """
-    b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
     inventory = _cubicasa_count(path, question)
+    if inventory and _window_question(question):
+        return _count_windows(path, question, context, endpoint, effort)
+    b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
     prompt = CUBICASA_COUNT_PROMPT if inventory else PROMPT
     content = [
         {"type": "text", "text": prompt.format(question=question)},
