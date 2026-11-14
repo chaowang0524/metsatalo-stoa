@@ -18,7 +18,7 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 
 - Every LLM call goes through `stoa.verda.chat(purpose, messages, endpoint=...)`, which appends one line per call (tokens, latency, `cost_usd`) to `logs/verda_calls.jsonl`. Don't call the OpenAI client directly. Each endpoint is one module in `endpoints/verda/` with `MODEL`, prices and `DEFAULTS`.
 - `deepseek` (`deepseek-4-1-flash-1017`, $0.15/$0.60 per M tokens): cheap and reliable at tool calling. It **does** read images sent as `image_url` data URIs, even though `usage` reports only a few hundred prompt tokens for them. The gateway has no `/v1/files`, so DeepSeek's `file_id` image input isn't available.
-- `kimi` (`kimi-k3-1-pro`, $2/$10): better at reading drawings and schedules. Reasoning is off by default (`extra_body={"thinking": {"type": "disabled"}}`). With reasoning off it sometimes skips tools and makes numbers up, so don't use it as the router. `reasoning_effort="low"` limits reasoning to a few hundred tokens. The default effort used up to 12k.
+- `kimi` (`kimi-k3-1-pro`, $2/$10): better at reading drawings and schedules. Thinking is enabled with `reasoning_effort="low"` and `max_tokens=4096` by default for routing, schedule answers and vision. The token budget includes reasoning and the final answer. DeepSeek remains the hybrid router; Kimi previously skipped tools with thinking disabled. Unrestricted effort used up to 12k tokens.
 - `nemotron` (Nemotron 3.5 Super VL, a dedicated container, no per-token price): calls have taken ~250 s at times (cold start or overload), so the benchmark left it out.
 - The text may arrive in `reasoning_content` instead of `content`. Use `verda.text_of(resp)`.
 

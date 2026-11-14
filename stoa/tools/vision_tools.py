@@ -37,8 +37,9 @@ def _png_bytes(path: Path, page: int = 0) -> bytes:
 
 def ask_vision_model(path: str, question: str, page: int = 0, context: dict | None = None,
                      endpoint: str = "kimi", effort: str | None = None) -> Answer:
-    """`effort` ("low", "medium", "high") turns kimi's reasoning back on at that
-    reasoning_effort; it is off in kimi's DEFAULTS."""
+    """An explicit `effort` overrides the endpoint's default reasoning effort.
+    Kimi defaults to low effort with thinking enabled.
+    """
     b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
     resp = verda.chat(
         "vision fallback",
@@ -51,8 +52,8 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
         }],
         context=context,
         endpoint=endpoint,
-        # Reasoning counts against max_tokens: "low" used ~250, default up to 12k.
-        max_tokens=4000 if effort else 400,
+        # Inherit Kimi's shared budget, including reasoning and the final answer.
+        max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 4000 if effort else 400),
         **({"reasoning_effort": effort, "extra_body": {"thinking": {"type": "enabled"}}} if effort else {}),
         temperature=0,
     )

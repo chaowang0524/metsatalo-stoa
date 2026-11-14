@@ -32,7 +32,7 @@ class Profile:
     route: str  # picks tools, composes answers from IFC/DXF tables
     table: str  # composes answers from PDF schedule text (pdf_page_text)
     vision: str  # reads rendered drawings
-    vision_effort: str | None = None  # reasoning_effort for vision calls; None = off
+    vision_effort: str | None = None  # None inherits the endpoint's default effort
 
 
 # Benchmark on 200 questions (VERDA_LOG.md, 2026-11-14): deepseek routes
@@ -281,7 +281,8 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
             messages.append({"role": "user", "content": "No more tool calls. Reply with the JSON answer now."})
         resp = verda.chat(
             "route question" if turn == 0 else "compose answer",
-            messages, context=ctx, endpoint=endpoint, max_tokens=800, temperature=0,
+            messages, context=ctx, endpoint=endpoint,
+            max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 800), temperature=0,
             **({} if last else {"tools": specs}),
         )
         res.add_usage(verda.usage_of(resp, endpoint))
