@@ -14,3 +14,6 @@ data/
 # Third-party clone (github.com/CubiCasa/CubiCasa5k), with its weights
 CubiCasa5k/
 
+
+# 20 drawings from the full dataset (not in the preview) for upload tests, 91 MB
+upload_samples/

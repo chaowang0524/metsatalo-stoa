@@ -54,3 +54,43 @@ def pdf_page_text(path: str, page: int = 0, max_chars: int = 12000) -> Answer:
         method=f"PDF text layer, page {page}",
         note="" if len(text) <= max_chars else f"truncated from {len(text)} chars",
     )
+
+
+AREA = re.compile(r"^\d+(?:[.,]\d+)?\s*(?:m²|m2|sf|sq\.?\s?ft)\.?$", re.I)
+ROOM_NO = re.compile(r"^\d+(?:\.\d+)+[a-z]?$", re.I)
+UNIT = re.compile(r"^(?:whg|wohnung|app|appartement|apt|apartment|unit)\.?\s*[\w-]{1,4}$", re.I)
+
+
+def _area(text: str) -> float:
+    v = float(re.match(r"\d+(?:[.,]\d+)?", text).group().replace(",", "."))
+    return round(v * 0.09290304, 2) if re.search(r"ft|sf", text, re.I) else v
+
+
+def pdf_rooms(path: str, page: int = 0) -> tuple[list[dict], list[dict]]:
+    """Room stamps on a plan sheet: a name with a room number and/or an area
+    directly below it (Swiss sheets: 'Zimmer' / '2.01' / '15.61 m²').
+    Returns (rooms, apartments); bboxes in PDF points cover the whole stamp."""
+    lines = [(t, b) for p, t, b in _lines(path) if p == page]
+
+    def below(b):
+        h = b[3] - b[1]
+        hits = [(t, c) for t, c in lines if -0.2 * h <= c[1] - b[3] < 0.6 * h and c[0] < b[2] and c[2] > b[0]]
+        return min(hits, key=lambda x: x[1][1]) if hits else (None, None)
+
+    rooms = []
+    for text, b in lines:
+        if not re.search(r"[^\W\d_]", text) or AREA.match(text) or UNIT.match(text):
+            continue
+        stamp, number, area = [b], None, None
+        t, c = below(b)
+        if t and ROOM_NO.match(t):
+            number, stamp = t, stamp + [c]
+            t, c = below(c)
+        if t and AREA.match(t):
+            area, stamp = _area(t), stamp + [c]
+        if number or area is not None:
+            rooms.append({"label": text, "number": number, "area": area,
+                          "bbox": [min(x[0] for x in stamp), min(x[1] for x in stamp),
+                                   max(x[2] for x in stamp), max(x[3] for x in stamp)]})
+    units = [{"label": t, "bbox": list(b)} for t, b in lines if UNIT.match(t)]
+    return rooms, units

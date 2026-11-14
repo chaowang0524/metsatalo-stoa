@@ -14,7 +14,9 @@ written at once with status "processing" and replaced when its facts are done:
 - raster images and scanned PDFs: one Gemini full-plan detection call
   (stoa.cubicasa_gemini), cached with the dataset's plans; Ask treats them as
   floor plans, like CubiCasa5K.
-- other PDFs: page 1 as the background, no pre-computed facts; Ask uses the PDF tools.
+- other PDFs: the same Gemini detection on page 1, rendered, for the components;
+  rooms and apartments from the text layer's room stamps when it has them (exact).
+  Ask keeps the PDF, so its text-layer and schedule tools still apply.
 - a bare .ifc: nothing to draw; Ask queries the model.
 """
 
@@ -33,7 +35,8 @@ from PIL import Image
 from stoa import cubicasa_gemini
 from stoa.inspect_file import RASTER, inspect_file
 from stoa.tools.vision_tools import DETECTOR_CACHE
-from stoa.ui.facts import OUT, cubicasa_facts, ifc_facts, swiss_facts
+from stoa.tools.pdf_tools import pdf_rooms
+from stoa.ui.facts import OUT, _fact, cubicasa_facts, ifc_facts, swiss_facts
 
 UPLOADS = Path("out/uploads")
 DOCS = OUT / "uploads"
@@ -42,6 +45,9 @@ ACCEPT = RASTER | {".pdf", ".dxf", ".svg", ".ifc"}
 MAX_FILES = 50
 MAX_BYTES = 200 * 1024 * 1024  # IFC models run to ~100 MB
 MAX_SIDE = 2048  # rendered PDF pages, as sent to the vision model
+# A dense CAD sheet ran past the default 24576 output tokens and was billed twice
+# (VERDA_LOG 2026-11-14), so rendered pages start with the budget the retry needed.
+PDF_MAX_TOKENS = 49152
 CREDIT = "Uploaded drawing"
 # Order of preference when one stem comes in several formats.
 KINDS = [(".dxf", "dxf"), (".svg", "svg"), (".pdf", "pdf"), *((e, "raster") for e in sorted(RASTER)), (".ifc", "ifc")]
@@ -90,12 +96,12 @@ def save(files: list[tuple[str, bytes]]) -> dict:
         else:
             p.write_bytes(data)
         groups.setdefault(p.stem, {})[ext] = (Path(name).name, p)
-    svgs = [s for s, g in groups.items() if ".svg" in g]
+    plans = [s for s, g in groups.items() if ".svg" in g or ".pdf" in g]
     out = []
     for stem, g in groups.items():
         ext, kind = next((e, k) for e, k in KINDS if e in g)
-        if kind == "ifc" and any(s.startswith(stem + "_") for s in svgs):
-            continue  # the model behind uploaded plan SVGs, not a drawing of its own
+        if kind == "ifc" and any(s.startswith(stem + "_") for s in plans):
+            continue  # the model behind uploaded plan sheets (<model>_<level>), not a drawing of its own
         name, path = g[ext]
         if kind == "dxf" and ".pdf" in g:
             name, path = g[".pdf"]  # the sheet people know; the pipeline finds the .dxf next to it
@@ -115,13 +121,39 @@ def _placeholder_view(path: Path, kind: str) -> dict:
     return {"width": 1000, "height": 700, "background": ""}
 
 
-def _render_page(pdf: Path) -> Path:
+def _render_page(pdf: Path) -> tuple[Path, float]:
+    """Page 1 as PNG, and the scale from PDF points to its pixels."""
     png = pdf.with_suffix(".png")
     with pymupdf.open(pdf) as d:
         page = d[0]
         zoom = min(MAX_SIDE / max(page.rect.width, page.rect.height), 4)
         page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom)).save(png)
-    return png
+    return png, zoom
+
+
+def _text_rooms(pdf: Path, zoom: float) -> list[dict]:
+    """Room and apartment facts from the stamps in the text layer: exact, no LLM.
+    On the Swiss sheets they match the DXF room labels on 63 of 65 plans."""
+    rooms, units = pdf_rooms(str(pdf))
+    if not rooms:
+        return []
+    def shape(b):
+        return {"bbox": [round(v * zoom, 1) for v in b]}
+    items = [{"ref": f"stamp-{i}", "label": r["label"] + (f" {r['number']}" if r["number"] else ""),
+              "value": r["area"], "shape": shape(r["bbox"])} for i, r in enumerate(rooms)]
+    method = "PDF text layer: room name stamps with a room number or area below"
+    facts = []
+    if units:
+        facts.append(_fact("apartment", "Spaces", "Apartments",
+                           [{"ref": f"unit-{i}", "label": u["label"], "shape": shape(u["bbox"])} for i, u in enumerate(units)],
+                           method="PDF text layer: apartment labels"))
+    facts.append(_fact("room", "Spaces", "Rooms", items, method=method))
+    names: dict[str, list] = {}
+    for r, it in zip(rooms, items):
+        names.setdefault(r["label"], []).append(it)
+    for name, its in sorted(names.items(), key=lambda x: -len(x[1])):
+        facts.append(_fact(f"room:{name}", "Rooms by name", name, its, method=method, kind="room"))
+    return facts
 
 
 def _process(doc: dict) -> None:
@@ -144,20 +176,36 @@ def _facts(doc: dict) -> dict:
         f["view"]["background"] = f"/uploads/{path.name}"
         return {"view": f["view"], "facts": f["facts"], "ifc": f.get("ifc"), "storey": f.get("storey")}
     if kind == "pdf":
-        png = _render_page(path)
-        if inspect_file(path).kind != "raster":
+        png, zoom = _render_page(path)
+        info = inspect_file(path)
+        if info.ifc or info.dxf:
+            # A sheet rendered from an uploaded model: Ask answers from the IFC exactly,
+            # so a Gemini guess at the same objects would only cost money.
             w, h = Image.open(png).size
             return {"view": {"width": w, "height": h, "background": f"/uploads/{png.name}"}, "facts": []}
+        if info.kind != "raster":
+            # Vector sheet: Gemini finds the components on the rendered page; rooms come
+            # from the text layer when it has room stamps. Ask keeps the PDF itself, so
+            # the text-layer and schedule tools still apply.
+            out = _detect(png, PDF_MAX_TOKENS)
+            if rooms := _text_rooms(path, zoom):
+                out["facts"] = [f for f in out["facts"] if f["group"] == "Components"] + rooms
+            return out
         doc.update(path=str(png), kind="raster", source=SOURCE["raster"])  # scanned sheet: a picture of a plan
         path, kind = png, "raster"
     if kind == "raster":
-        r = cubicasa_gemini.analyse(path, DETECTOR_CACHE)
-        if r["status"] == "failed":
-            raise RuntimeError(f"Gemini detection failed: {r.get('error', '')}")
-        f = cubicasa_facts(path)
-        return {"view": f["view"] | {"background": f"/uploads/{path.name}"}, "facts": f["facts"],
-                "floor_plan": True, "cost_usd": round(r["cost_usd"], 4)}
+        return _detect(path) | {"floor_plan": True}
     return {}  # bare IFC: nothing to draw
+
+
+def _detect(png: Path, max_tokens: int = 24576) -> dict:
+    """One Gemini full-plan detection call: boxes in the PNG's pixels, which are the view's."""
+    r = cubicasa_gemini.analyse(png, DETECTOR_CACHE, max_tokens=max_tokens)
+    if r["status"] == "failed":
+        raise RuntimeError(f"Gemini detection failed: {r.get('error', '')}")
+    f = cubicasa_facts(png)
+    return {"view": f["view"] | {"background": f"/uploads/{png.name}"}, "facts": f["facts"],
+            "cost_usd": round(r["cost_usd"], 4)}
 
 
 def resume() -> None:

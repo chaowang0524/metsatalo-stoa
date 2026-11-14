@@ -58,5 +58,17 @@ class UploadTests(unittest.TestCase):
         self.assertTrue(vision.call_args.kwargs["floor_plan"])
 
 
+class PdfRoomTests(unittest.TestCase):
+    def test_room_stamps_match_the_reference_counts(self):
+        from collections import Counter
+        from stoa.tools.pdf_tools import pdf_rooms
+        rooms, units = pdf_rooms("junction-dataset-preview/data/swiss_dwellings/site1000_bldg2082_floor9385.pdf")
+        names = Counter(r["label"] for r in rooms)
+        self.assertEqual(len(units), 4)  # questions.jsonl: 4 apartments
+        self.assertEqual((names["Zimmer"], names["Küche"], names["Reduit"], names["Wohnen/Essen"], names["Treppenhaus"]),
+                         (12, 4, 2, 1, 1))
+        self.assertEqual(next(r for r in rooms if r["number"] == "2.01")["area"], 15.61)
+
+
 if __name__ == "__main__":
     unittest.main()

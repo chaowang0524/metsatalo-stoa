@@ -18,13 +18,22 @@ from openai import OpenAI
 LOG_PATH = Path(os.environ.get("VERDA_LOG", "logs/verda_calls.jsonl"))
 
 
+# The funded Gemini key lives in .env; an old, unfunded GEMINI_API_KEY exported in
+# a shell profile used to win and return 402. For these, .env takes precedence.
+DOTENV_WINS = {"GEMINI_API_KEY", "Gemini_API_KEY"}
+
+
 def _load_dotenv(path: Path = Path(".env")) -> None:
-    """Fill os.environ from a gitignored .env file, without overriding."""
+    """Fill os.environ from a gitignored .env file, without overriding, except DOTENV_WINS."""
     if path.exists():
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             k, sep, v = line.strip().partition("=")
             if sep and not k.startswith("#"):
-                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+                k, v = k.strip(), v.strip().strip("'\"")
+                if k in DOTENV_WINS:
+                    os.environ[k] = v
+                else:
+                    os.environ.setdefault(k, v)
 
 
 _load_dotenv()

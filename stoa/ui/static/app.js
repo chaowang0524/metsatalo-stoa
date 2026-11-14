@@ -182,7 +182,8 @@ async function loadDoc(id) {
   const basis = doc.source === "ifc_models" ? (doc.ifc ? "exact · from BIM model" : "exact · from plan SVG") : "exact · from CAD geometry";
   const cost = doc.cost_usd ? ` · $${doc.cost_usd.toFixed(2)}` : "";
   $("#doc-meta").replaceChildren(
-    any ? h("span", { className: `badge ${det ? "det" : "model"}`, textContent: det ? basis : "model detection · verify on plan" }) : "",
+    any ? h("span", { className: `badge ${det ? "det" : "model"}`, textContent: det ? basis
+      : doc.facts.some((f) => f.deterministic) ? "✓ rows exact · ⚠ rows model: verify" : "model detection · verify on plan" }) : "",
     doc.storey ? h("span", { textContent: `storey ${doc.storey}` }) : "",
     any ? h("span", { className: "badge free", textContent: det ? "pre-computed · 0 LLM tokens" : `pre-computed · 1 Gemini call per plan${cost}` }) : "",
     h("span", { textContent: doc.uploaded ? "uploaded" : doc.source }),
@@ -228,6 +229,7 @@ function emptyNote(doc) {
   }
   return h("div", { className: "empty", textContent: doc.kind === "ifc"
     ? "IFC model without a plan drawing: ask a question below."
+    : doc.kind === "pdf" ? "Sheet drawn from the uploaded IFC model: ask a question below, answers come from the model exactly."
     : "No pre-computed facts for this sheet. Ask a question below." });
 }
 
