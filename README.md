@@ -44,28 +44,40 @@ A five-minute tour:
 2. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
    doors, windows, fixtures and so on). Hover or click a fact to highlight its
    objects on the plan. Click the same item again to zoom back out.
-3. **Ask a question.** Click "💬 Ask a question" and type in any language, for
+3. **Edit live.** Add or remove objects right on the plan:
+   - click a component kind in the Facts panel, then click the plan to add one;
+   - right-click an object to remove it;
+   - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
+     real-world size.
+
+   Counts, highlights and the cost estimate update immediately, and ⌘Z undoes
+   any edit.
+4. **Render it in 3D.** "◈ 3D" turns the edited plan, edits included, into an
+   isometric view with Gemini. "↗ Share render" → "Copy to clipboard" drops it
+   straight into a chat, an email or a report.
+5. **Human in the loop.** The engineer has the last word on every annotation.
+   On raster scans the objects come from a vision model, so treat them as a
+   first draft: remove false detections and add the ones it missed. Edits are
+   saved on the server per drawing, so the corrected plan is what the next
+   person sees, and what Cost and Export use. Ask uses it too: a count of one
+   component kind takes out the objects the engineer rejected and adds the ones
+   they placed, with no extra LLM call, and is badged "includes engineer
+   corrections". If an answer can't be matched to the plan's objects, it says
+   the edits are not applied.
+6. **Ask a question.** Click "💬 Ask a question" and type in any language, for
    example *"How many windows are there?"*, *"What is the total area of the
    bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
    badged **exact** (computed from vector or BIM data) or **model answer ·
    verify** (vision). "Highlight references" shows only the evidence it
    used on the plan, and "Sources and calculation details" lists the method, the tools called and
    the cost.
-4. **Human in the loop.** If something is missing or wrong, fix it by hand:
-   - click a component kind in the Facts panel, then click the plan to add one;
-   - right-click an object to reject it;
-   - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
-     real-world size.
-
-   Counts update immediately, edits are saved on the server, and ⌘Z undoes them.
-5. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
+7. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
    material and labour prices. Each price links to its source (Taloon.com,
    K-Rauta, or published hourly rates). You can overwrite any quantity or price,
    then "Submit" freezes a quote. Its `/quote/<id>` link lets a client approve
    it, ask for changes, print it or download a CSV.
-6. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF. "◈ 3D"
-   renders an isometric view of the edited plan with Gemini.
-7. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
+8. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF.
+9. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
    files:
    - DXF: exact CAD facts;
    - plan SVG + IFC: BIM facts;

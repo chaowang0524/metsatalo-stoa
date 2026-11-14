@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from stoa import pipeline
-from stoa.ui import library
+from stoa.ui import corrections, library
 from stoa.ui import render as render3d
 from stoa.ui import uploads
 from stoa.ui.facts import DATA, OUT
@@ -194,6 +194,7 @@ class Ask(BaseModel):
     id: str
     question: str
     router: str | None = None
+    edits: Edits | None = None  # the plan as the engineer sees it now; else the saved edits
 
 
 def _to_view(bbox, frame):
@@ -226,6 +227,11 @@ async def ask(q: Ask):
             seen.add(e.ref)
             out["items"].append({"ref": e.ref, "label": e.label, "value": e.value, "shape": shape})
     out["unplaced"] = len(res.answer.evidence) - len(out["items"]) if res.answer else 0
+    # The answer comes from the source file; fold in the engineer's edits to the plan.
+    saved = _edits_path(source, stem)
+    edits = q.edits.model_dump() if q.edits else json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else None
+    if edits and res.answer:
+        corrections.apply(doc, edits, q.question, [ev.ref for ev in res.answer.evidence], out)
     return out
 
 

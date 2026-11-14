@@ -98,6 +98,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .badge.det { background: #e6f4ea; color: var(--ok); }
 .badge.model { background: #fff3e0; color: var(--warn); }
 .badge.free { background: #eef2ff; color: #3b5bdb; }
+.badge.edited { background: #fff4e6; color: #e8590c; display: inline-block; margin-top: 4px; }
+.qa .a .sub.warn { color: var(--warn); }
 
 #facts { flex: 1; overflow-y: auto; padding: 4px 0 12px; }
 
