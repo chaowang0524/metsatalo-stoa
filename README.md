@@ -28,6 +28,24 @@ the evaluation command below.
 uv run python -m stoa.eval --per-source 30 --workers 8      # writes out/eval_*.jsonl
 ```
 
+`eval` automatically grades text answers with DeepSeek after answering finishes
+(`--judge-workers 2` by default). `num_acc` reports numeric accuracy;
+`text_score` reports the mean reference-based grade (0, 0.5 or 1). `scored`
+counts both kinds. Judge failures appear as `jerr`, separately from answer
+errors, and can be retried by grading the saved file. Usage totals include
+judging; `judge$` shows its cost separately. Individual grades, explanations,
+usage and errors are saved in each row's `text_score`, `judge`, `judge_seconds`
+and `judge_error` fields; the original numeric `correct` field is unchanged.
+
+To grade an existing run without repeating the drawing questions:
+
+```powershell
+uv run python -m stoa.eval --score-existing out/eval_hybrid_20261114_143825.jsonl
+```
+
+This writes a new `*_scored_<time>.jsonl` file and preserves the input. Rows
+already carrying a text score are reused. `stoa.compare` also reuses these scores.
+
 Every Verda call is logged to `logs/verda_calls.jsonl`.
 
 The experimental CubiCasa model is not part of the main dependency setup. It

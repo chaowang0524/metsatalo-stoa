@@ -16,25 +16,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from stoa import verda
-from stoa.answer import parse_llm_answer
+from stoa.judge import judge_text
 
 CACHE = Path("out/bench/judge_cache.json")
-JUDGE = """Grade a candidate answer to a question about a construction drawing or BIM model against the reference answer.
-Score 1 if the candidate states the same key facts as the reference (wording, order, extra detail and language may differ; numbers must agree), 0.5 if partly right, 0 if wrong, missing or contradicting the reference.
-Reply with JSON only: {{"answer": <1|0.5|0>, "explanation": "<one short sentence>"}}
-
-Question: {q}
-
-Reference answer: {gt}
-
-Candidate answer: {a}"""
 
 
 def judge(q: str, gt: str, a: str) -> float:
-    resp = verda.chat("judge text answer", [{"role": "user", "content": JUDGE.format(q=q, gt=gt, a=a)}],
-                      context={"run": "compare"}, max_tokens=300, temperature=0)
     try:
-        return float(parse_llm_answer(verda.text_of(resp))["answer"])
+        return judge_text(q, gt, a, context={"run": "compare"})["score"]
     except (TypeError, ValueError):
         return 0.0
 
@@ -52,7 +41,7 @@ def main() -> None:
     for name, rows in runs.items():
         for qid in common:
             r = rows[qid]
-            if r["correct"] is None:
+            if r["correct"] is None and r.get("text_score") is None:
                 a = str((r.get("answer") or {}).get("value") or "")
                 key = hashlib.sha1(f"{r['question']}\x00{a}".encode()).hexdigest()
                 r["_key"] = key
@@ -61,6 +50,7 @@ def main() -> None:
     with ThreadPoolExecutor(8) as pool:
         for key, s in zip([t[0] for t in todo], pool.map(lambda t: judge(*t[1:]) if t[3] else 0.0, todo)):
             cache[key] = s
+    CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_text(json.dumps(cache), encoding="utf-8")
 
     sources = sorted({runs[next(iter(runs))][q]["source"] for q in common})
@@ -72,7 +62,8 @@ def main() -> None:
         for src in sources + ["ALL"]:
             rs = [rows[q] for q in common if src == "ALL" or rows[q]["source"] == src]
             num = [r["correct"] for r in rs if r["correct"] is not None]
-            txt = [cache[r["_key"]] for r in rs if r["correct"] is None]
+            txt = [r["text_score"] if r.get("text_score") is not None else cache[r["_key"]]
+                   for r in rs if r["correct"] is None]
             tok = sum(r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in rs) / len(rs)
             # Older rows have no cost_usd: price them all at the router's rates.
             usd = sum(r["cost_usd"] if "cost_usd" in r else
