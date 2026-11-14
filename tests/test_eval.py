@@ -22,6 +22,22 @@ def text_row(value="候选答案"):
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_type_filter_preserves_full_run_sampling(self):
+        questions = [{"path": f"data/source{i%2}/file.ifc", "question": str(i),
+                      "answer": "reference", "type": "text" if i%3 == 0 else "count"}
+                     for i in range(24)]
+        args = SimpleNamespace(source=None, seed=123, per_source=8, limit=None,
+                               skip=None, question_type=None)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "questions.jsonl").write_text("\n".join(json.dumps(q) for q in questions), encoding="utf-8")
+            with patch.object(evaluation, "DATASET", root):
+                full = evaluation.load(args)
+                args.question_type = "text"
+                selected = evaluation.load(args)
+        self.assertTrue(selected)
+        self.assertEqual(selected, [q for q in full if q["type"] == "text"])
+
     def test_partial_credit_retains_answer_and_judge_usage(self):
         row = text_row()
         with patch.object(evaluation, "judge_text", return_value={

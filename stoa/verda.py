@@ -7,6 +7,8 @@ cost evidence for Stoa and our process evidence for the Verda bounty.
 
 import json
 import os
+import math
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +40,31 @@ ENDPOINTS["inference"] = deepseek
 ENDPOINTS["vision"] = nemotron
 
 _clients: dict[str, OpenAI] = {}
+_RATE_LOCK = threading.Lock()
+_RATE_UNTIL = 0.0
+
+
+def _wait_for_rate_limit() -> None:
+    while True:
+        with _RATE_LOCK:
+            delay = _RATE_UNTIL - time.monotonic()
+        if delay <= 0:
+            return
+        time.sleep(min(delay, 30))
+
+
+def _backoff(error, retry: int) -> None:
+    global _RATE_UNTIL
+    delay = 15 * (retry + 1)
+    headers = getattr(getattr(error, "response", None), "headers", {})
+    try:
+        requested = float(headers.get("retry-after", 0))
+        if math.isfinite(requested):
+            delay = max(delay, min(requested, 120))
+    except (TypeError, ValueError):
+        pass
+    with _RATE_LOCK:
+        _RATE_UNTIL = max(_RATE_UNTIL, time.monotonic() + delay)
 
 
 def client(endpoint: str = "deepseek") -> OpenAI:
@@ -63,9 +90,23 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
     t0 = time.perf_counter()
     error = None
     resp = None
+    retries = 0
+    is_verda = getattr(ep, "PROVIDER", "verda") == "verda"
     try:
-        resp = client(endpoint).chat.completions.create(messages=messages, **kwargs)
-        return resp
+        while True:
+            if is_verda:
+                _wait_for_rate_limit()
+            try:
+                resp = client(endpoint).chat.completions.create(messages=messages, **kwargs)
+                return resp
+            except Exception as exc:
+                # The SDK already retries short failures. Add at most two longer,
+                # shared cooldowns for the Verda tenant RPM limit.
+                if is_verda and getattr(exc, "status_code", None) == 429 and retries < 2:
+                    _backoff(exc, retries)
+                    retries += 1
+                    continue
+                raise
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
         raise
@@ -89,6 +130,7 @@ def chat(purpose: str, messages: list[dict], context: dict | None = None, endpoi
             "latency_s": round(time.perf_counter() - t0, 3),
             "cost_usd": round(measured["cost_usd"], 6),
             "error": error,
+            "rate_limit_retries": retries,
             **(context or {}),
         }
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)

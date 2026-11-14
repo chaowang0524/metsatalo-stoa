@@ -74,6 +74,11 @@ class Tool:
             for k, v in self.parameters.items()
         }
         required = [k for k, v in self.parameters.items() if not v.get("_optional")]
+        if self.terminal:
+            props["answer_directly"] = {"type": "boolean", "description":
+                "True only if this ONE tool result completely answers every part of the question. "
+                "False for partial measurements, assumptions, explanations or further aggregation."}
+            required.append("answer_directly")
         return {
             "type": "function",
             "function": {
@@ -158,9 +163,14 @@ TOOLS = [
     Tool(
         "ifc_list_elements",
         "Table of elements of one IFC class (name, type, storey, materials, Pset_*Common "
-        "properties such as IsExternal or FireRating, width/height, length, volume). "
-        "Use for questions about properties, materials, sizes or ratings; you then write the answer.",
-        {"ifc_class": _s("IFC class", enum=ifc_tools.COUNTABLE), "storey": _s(STOREY, True)},
+        "properties such as IsExternal or FireRating, material layer thicknesses, size statistics "
+        "and code-computed counts/percentages by architectural name). Use is_external=true for "
+        "exterior walls, false for interior walls. Use global_id for an exact GUID/UUID lookup. "
+        "Use for properties, materials, sizes or ratings; then write a complete answer.",
+        {"ifc_class": _s("IFC class", enum=ifc_tools.COUNTABLE), "storey": _s(STOREY, True),
+         "is_external": {"type": "boolean", "_optional": True,
+                         "description": "Filter explicit IsExternal property: true exterior, false interior; omit for all."},
+         "global_id": _s("Exact IFC GlobalId (UUID) if the question identifies one element", True)},
         "ifc", ifc_tools.ifc_list_elements, terminal=False,
     ),
     Tool(
@@ -255,11 +265,15 @@ SYSTEM = """You answer questions about construction drawings and BIM models by c
 Rules:
 - If one tool call computes the answer, make just that call. Prefer deterministic tools; use ask_vision_model only if nothing else fits.
 - For breakdowns or comparisons, call several tools in one turn, then combine their results.
+- For terminal tools set answer_directly=false unless the result answers EVERY part of the question. A door count alone does not answer a doorknob estimate; an unfiltered room schedule does not answer bathroom tiling totals.
+- Use code-computed counts, percentages and size statistics instead of adding sampled table rows. Respect filters and omitted_groups; never describe missing data in a truncated table as absent from the model. Distinguish element instance counts from distinct type counts and label the basis of averages.
+- For a question containing a GUID/UUID, retrieve that exact element. For exterior/interior walls use the explicit IsExternal filter, not assumptions from material names.
+- Text answers must address all requested parts: names, units, quantities, distributions, thicknesses, ranges, and data availability where relevant. Put the full answer in the answer field, not just in explanation. Preserve distinct type names and variants. For materials, include the per-type layer composition and thickness when available. Avoid unsupported assumptions; distinguish model facts from estimates.
 - For schedules listed below the file line, use pdf_table_query (counts, sums) or pdf_table_rows (look up values) with the exact column names and cell values shown; prefer them over pdf_page_text.
 - Questions can be in any language. Keep quoted names (rooms, storeys, labels) exactly as written.
 - Storeys follow European numbering: the ground floor is level 0, "first floor"/"level 1" is the first storey above it (1. OG, OG1), "second floor" is OG2. Prefer a storey whose name carries that number; "basement"/"underground" is the storey named basement, Keller, kjeller or UG. Pass the storey name exactly as listed.
 - After an info tool (facts, room list, page text), work out the answer from its output and reply with JSON only:
-  {{"answer": <number or short text>, "unit": <"count"|"m2"|"m3"|"m"|"ft2"|null>, "explanation": "<one sentence citing the rows or items used>", "evidence": [<ids such as "e3" of exactly the items your answer counts, sums or cites>]}}
+  {{"answer": <number for a single numeric question, or complete text for a descriptive/multipart question>, "unit": <"count"|"m2"|"m3"|"m"|"ft2"|null>, "explanation": "<one sentence citing the rows or items used>", "evidence": [<ids such as "e3" of exactly the items your answer counts, sums or cites>]}}
   For counts and areas, "answer" must be a bare number. When a tool output ends with an evidence id list, cite ids from it; a count of N cites N ids."""
 
 
@@ -347,6 +361,10 @@ def _describe(info: FileInfo) -> str:
             pass
     if info.path.suffix.lower() == ".pdf" and _has_tables(info):
         text += "\nSchedules on this sheet (for pdf_table_query / pdf_table_rows):\n" + pdf_tables.describe_tables(str(info.path))
+        text += ("\nSchedule filtering: apply EVERY qualifier in the question, including product/type, "
+                 "manufacturer/model, material and floor/level. Use separate WHERE conditions (AND) "
+                 "for independent qualifiers, even on the same column; values within one condition are OR. "
+                 "Filtering by floor alone can include unrelated products.")
     return text
 
 
@@ -410,15 +428,22 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
         last = turn == MAX_TURNS - 1
         if last:  # no more tools: answer from what has been gathered
             messages.append({"role": "user", "content": "No more tool calls. Reply with the JSON answer now."})
-        resp = verda.chat(
-            "route question" if turn == 0 else "compose answer",
-            messages, context=ctx, endpoint=endpoint,
-            max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 800), temperature=0,
-            **({} if last else {"tools": specs}),
-        )
+        try:
+            resp = verda.chat(
+                "route question" if turn == 0 else "compose answer",
+                messages, context=ctx, endpoint=endpoint,
+                max_tokens=verda.ENDPOINTS[endpoint].DEFAULTS.get("max_tokens", 800 if turn == 0 else 4096), temperature=0,
+                **({} if last else {"tools": specs}),
+            )
+        except Exception as exc:
+            res.error = f"{type(exc).__name__}: {exc}"
+            return res  # retain any earlier successful calls and their usage
         res.add_usage(verda.usage_of(resp, endpoint))
         msg = resp.choices[0].message
         if not msg.tool_calls:
+            if getattr(resp.choices[0], "finish_reason", None) == "length":
+                res.error = "Final answer truncated at the output token limit"
+                return res
             data = parse_llm_answer(verda.text_of(resp))
             res.answer = Answer(
                 value=data["answer"], unit=data.get("unit"),
@@ -432,10 +457,12 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
             "tool_calls": [tc.model_dump(include={"id", "type", "function"}) for tc in msg.tool_calls],
         })
         outputs = []
+        direct = True
         for tc in msg.tool_calls:
             tool = by_name.get(tc.function.name)
             try:
                 args = json.loads(tc.function.arguments or "{}")
+                direct = (args.pop("answer_directly", True) is True) and direct
                 args = {k: v for k, v in args.items() if v not in (None, "")}
                 if tool is None:
                     raise ToolError(f"Unknown tool {tc.function.name!r}")
@@ -451,10 +478,13 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
             evidence += out.evidence
             payload = out.value if not tool.terminal else out.summary(max_evidence=20)
             content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": content[:15000] + index})
+            limit = 60000 if tool.source == "ifc" else 15000
+            if len(content) > limit:
+                content = content[:limit] + "\n[TRUNCATED TOOL OUTPUT: do not infer totals or absence from partial rows.]"
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": content + index})
         # The common case: the first call was a single deterministic tool. Its
         # result is the answer, with no second LLM call.
-        if turn == 0 and len(msg.tool_calls) == 1 and outputs and outputs[0][0].terminal:
+        if direct and turn == 0 and len(msg.tool_calls) == 1 and outputs and outputs[0][0].terminal:
             res.answer = outputs[0][1]
             return res
     res.error = "no answer within turn limit"

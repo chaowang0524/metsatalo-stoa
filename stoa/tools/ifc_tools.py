@@ -277,6 +277,12 @@ def ifc_model_facts(path: str) -> Answer:
         "storeys": storeys,
         "element_counts": counts,
         "spaces_sample": spaces,
+        "sites": [{"name": s.Name, "latitude_dms": s.RefLatitude,
+                   "longitude_dms": s.RefLongitude, "elevation": s.RefElevation}
+                  for s in f.by_type("IfcSite")],
+        "buildings": [{"name": b.Name, "long_name": b.LongName,
+                       "properties": ue.get_psets(b, psets_only=True)}
+                      for b in f.by_type("IfcBuilding")],
     }
     return Answer(value=facts, method="IFC model overview", deterministic=True)
 
@@ -360,6 +366,19 @@ def ifc_space_breakdown(path: str, storey: str | None = None, group_by_function:
         raise ToolError("No IfcSpace found" + (f" on {storey!r}" if storey else ""))
     if not storey:
         lines.insert(0, f"Building: {n} spaces, total area {total:.1f} m2\n")
+    # Summarize across the whole requested scope, not separately per floor.
+    functions = {}
+    for ev_space in (s for spaces in by_storey.values() for s in spaces):
+        fn = _function(ev_space)
+        area = _quantity(path, ev_space, "net_floor_area")[0]
+        entry = functions.setdefault(fn, [0, 0.0])
+        entry[0] += 1
+        entry[1] += area or 0.0
+    overview = [f"Function totals across requested scope: {len(functions)} functions; percentages are of total area."]
+    for fn, (count, area) in sorted(functions.items(), key=lambda item: -item[1][1]):
+        overview.append(f"- {fn}: {count} spaces, {area:.1f} m2, "
+                        f"{100*area/total if total else 0:.1f}%; average {area/count:.1f} m2")
+    lines = overview + [""] + lines
     return Answer(
         value="\n".join(lines).strip(),
         unit=None,
@@ -389,16 +408,55 @@ def _common_props(e) -> dict:
     return out
 
 
-def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None) -> Answer:
+def _report_name(e) -> str:
+    """Keep architectural names as well as IFC type names; strip instance ids only."""
+    return re.sub(r":\d+$", "", e.Name or "") or _label(e)
+
+
+def _material_layers(path: str, e) -> list[dict]:
+    material = ue.get_material(e, should_skip_usage=True)
+    if material is None or not material.is_a("IfcMaterialLayerSet"):
+        return []
+    scale = _scales(path)["length"] * 1000
+    return [{"material": layer.Material.Name if layer.Material else None,
+             "thickness_mm": round(layer.LayerThickness * scale, 3)}
+            for layer in material.MaterialLayers]
+
+
+def _external_classification(e) -> tuple[bool | None, str]:
+    explicit = _common_props(e).get("IsExternal")
+    if isinstance(explicit, bool):
+        return explicit, "Pset_*Common.IsExternal"
+    # ArchiCAD can export the classification as a named layer instead of the
+    # standard property. Preserve its provenance; never infer from thickness.
+    layer = ue.get_psets(e, psets_only=True).get("ArchiCADProperties", {}).get("Ebene", "")
+    labels = {"außenwände": True, "aussenwände": True, "exterior walls": True,
+              "innenwände": False, "interior walls": False}
+    return labels.get(_norm(layer)), f"ArchiCADProperties.Ebene={layer}" if layer else "unavailable"
+
+
+def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None,
+                      is_external: bool | None = None, global_id: str | None = None) -> Answer:
     """Elements of one class grouped by identical type, storey, materials, properties
     and size, with counts and summed quantities. Grouping keeps the table small
     enough to send to the LLM cheaply."""
     elems = _elements(path, ifc_class, storey)
+    if global_id:
+        elems = [e for e in elems if e.GlobalId == global_id]
+        if not elems:
+            raise ToolError(f"No {ifc_class} with GlobalId {global_id!r} in this scope")
+    classifications = {e.id(): _external_classification(e) for e in elems}
+    unknown_external = sum(value is None for value, _ in classifications.values())
+    if is_external is not None:
+        elems = [e for e in elems if classifications[e.id()][0] == is_external]
     length = _scales(path)["length"]
     groups: dict[str, dict] = {}
     evidence = []
+    by_name, by_type, material_counts, sizes = {}, {}, {}, {}
     for e in elems:
-        row = {}
+        row = {"name": _report_name(e)}
+        if getattr(e, "LongName", None):
+            row["long_name"] = e.LongName
         if t := ue.get_type(e):
             row["type"] = t.Name
         if s := _storey_of(e):
@@ -410,8 +468,24 @@ def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None) -> A
             row["materials"] = mats
         if props := _common_props(e):
             row["props"] = props
-        if "type" not in row:
-            row["name"] = _label(e)
+        classification, classification_source = classifications[e.id()]
+        if classification is not None:
+            row.setdefault("props", {})["IsExternal"] = classification
+            row["external_classification_source"] = classification_source
+        if layers := _material_layers(path, e):
+            row["material_layers"] = layers
+            row["layer_total_thickness_mm"] = round(sum(x["thickness_mm"] for x in layers), 3)
+        if global_id:
+            row["global_id"] = e.GlobalId
+            row["all_properties"] = ue.get_psets(e, psets_only=True)
+        by_name[row["name"]] = by_name.get(row["name"], 0) + 1
+        type_name = row.get("type", row["name"])
+        by_type[type_name] = by_type.get(type_name, 0) + 1
+        for material in row.get("materials", []):
+            material_counts[material] = material_counts.get(material, 0) + 1
+        for attr in ("OverallWidth", "OverallHeight"):
+            if attr in row:
+                sizes.setdefault(attr, []).append((row[attr], row["name"]))
         key = json.dumps(row, sort_keys=True, default=str)
         g = groups.setdefault(key, {**row, "count": 0})
         g["count"] += 1
@@ -421,9 +495,26 @@ def ifc_list_elements(path: str, ifc_class: str, storey: str | None = None) -> A
                 g[f"total_{q}"] = round(g.get(f"total_{q}", 0) + qv, 3)
                 main = round(qv, 2) if main is None else main
         evidence.append(Evidence(ref=e.GlobalId, label=_label(e), value=main))
-    rows = sorted(groups.values(), key=lambda g: -g["count"])[:120]
+    rows = sorted(groups.values(), key=lambda g: -g["count"])
+    size_stats = {}
+    for attr, values in sizes.items():
+        unique = sorted(set(values), reverse=True)
+        size_stats[attr] = {"unit": "m", "count": len(values),
+            "min": min(v for v, _ in values), "max": max(v for v, _ in values),
+            "instance_weighted_mean": round(sum(v for v, _ in values)/len(values), 6),
+            "distinct_name_size_mean": round(sum(v for v, _ in unique)/len(unique), 6),
+            "largest_distinct_name_sizes": [{"value": v, "name": name} for v, name in unique[:10]]}
+    summary = {"elements": len(elems), "groups": len(groups),
+        "filter": {"storey": storey, "is_external": is_external, "global_id": global_id},
+        "unknown_external_classification_before_filter": unknown_external,
+        "by_name": [{"name": name, "count": count, "percent": round(count/len(elems)*100, 2)}
+                    for name, count in sorted(by_name.items(), key=lambda item: -item[1])],
+        "by_type": [{"type": name, "count": count, "percent": round(count/len(elems)*100, 2)}
+                    for name, count in sorted(by_type.items(), key=lambda item: -item[1])],
+        "material_counts": material_counts, "size_statistics": size_stats,
+        "rows": rows[:120], "omitted_groups": max(0, len(rows)-120)}
     return Answer(
-        value={"elements": len(elems), "groups": len(groups), "rows": rows},
+        value=summary,
         method=f"IFC element table for {ifc_class}",
         evidence=evidence,
     )

@@ -90,11 +90,16 @@ Needs `junction-dataset-preview/questions.jsonl` and its drawings.
 ```bash
 uv run python -m stoa.eval --per-source 40 --router hybrid --workers 8   # writes out/eval_<profile>_<time>.jsonl
 uv run python -m stoa.eval --source cubicasa5k --per-source 30 --seed 1024
+uv run python -m stoa.eval --per-source 50 --seed 123 --type text --workers 4 # same text subset as the full run
 uv run python -m stoa.eval --score-existing out/eval_hybrid_<time>.jsonl # grade saved answers only
 uv run python -m unittest discover -s tests -v                           # regression tests
 ```
 
 Keep `--workers` at 8 or fewer: the Verda gateway returns `429 tenant rpm` above that.
+Verda 429 responses receive up to two additional retries with a shared cooldown
+within the process (15/30 seconds, extended by a numeric Retry-After header up to
+120 seconds). Logs record `rate_limit_retries`; sustained rate limits can still
+fail. A later API failure now retains usage from earlier successful pipeline calls.
 
 - Counts must match exactly. Area, length and volume must be within 2%.
 - Text answers are graded by DeepSeek against the reference (0, 0.5 or 1)
@@ -103,8 +108,18 @@ Keep `--workers` at 8 or fewer: the Verda gateway returns `429 tenant rpm` above
   `--score-existing`, which writes a new `*_scored_<time>.jsonl` file and
   reuses rows already graded.
 - Usage totals include judging; `judge$` shows its cost separately.
+- `--type text` filters after sampling, preserving question IDs from the same
+  seed/per-source full run. The reference answers and judge rubric are unchanged.
 - `stoa.compare` compares runs on shared questions. Use the same seed and
   `--per-source` so runs are comparable.
+
+IFC text answers use exact GUID lookup, exterior/interior filtering (standard
+properties or explicitly labeled ArchiCAD wall layers, with provenance), material
+layer thicknesses, project/site metadata, and code-computed count/size summaries.
+Partial tool results are composed into a complete answer instead of returned as a
+single number. DeepSeek composition has up to 4096 output tokens; routing remains
+at 800. Detail rows expose omitted groups, while count and size summaries include
+all matching elements. Missing classifications remain unknown.
 
 ## Current results
 

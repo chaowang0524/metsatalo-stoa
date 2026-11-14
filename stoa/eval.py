@@ -58,6 +58,10 @@ def load(args) -> list[dict]:
     # Skip after sampling, so the other sources get the same questions as a full run.
     if args.skip:
         qs = [q for q in qs if q["source"] not in args.skip.split(",")]
+    # Filter after sampling so --type text replays the text subset of the same
+    # full per-source run, instead of selecting a different set of questions.
+    if getattr(args, "question_type", None):
+        qs = [q for q in qs if q["type"] == args.question_type]
     return qs
 
 
@@ -157,6 +161,8 @@ def print_summary(rows: list[dict], router: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source")
+    ap.add_argument("--type", dest="question_type", choices=["text", "count", "area", "length", "volume", "other"],
+                    help="keep only this question type AFTER sampling (same questions as a full run)")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--per-source", type=int)
     ap.add_argument("--workers", type=int, default=8)
