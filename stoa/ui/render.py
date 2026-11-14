@@ -27,9 +27,10 @@ STYLES = {
 
 PROMPT = """Turn this 2D architectural floor plan into {style}.
 Keep the layout exactly as drawn: same walls, room shapes and proportions, and every door
-and window in the same place. Coloured numbered boxes are annotations from the engineer;
-render a window where a box is labelled window and a door where it is labelled door,
-and do not show the boxes or numbers themselves. Do not add or remove rooms."""
+and window in the same place. Coloured dashed outlines labelled "+ <object>" are objects the
+engineer added: render that object there (a window where it says window, a door where it says
+door). Red crossed-out boxes labelled "− <object>" are not on site: leave those objects out.
+Do not show the outlines, crosses or labels themselves. Do not add or remove rooms."""
 
 
 def render(png: bytes, style: str = "isometric", context: dict | None = None) -> dict:

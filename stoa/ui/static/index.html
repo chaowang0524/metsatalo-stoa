@@ -20,6 +20,7 @@
       <button id="btn-cost" class="tool" title="Installed cost of the components on this plan" aria-expanded="false" aria-controls="cost-pop">€ Cost ▾</button>
       <div id="cost-pop" role="dialog" aria-label="Cost estimate" hidden></div>
     </div>
+    <button id="btn-export" class="tool" title="Save the edited plan as PNG, JPEG or PDF" aria-haspopup="menu">⤓ Export</button>
     <button id="btn-render" class="tool" title="AI 3D render of the edited plan">◈ 3D</button>
   </div>
 </header>
@@ -30,6 +31,7 @@
       <image id="bg" preserveAspectRatio="none"/>
       <g id="layer-edits"></g>
       <g id="layer-hl"></g>
+      <g id="layer-sel"></g>
     </svg>
     <div id="palette">
       <span id="palette-hint" class="hint"></span>

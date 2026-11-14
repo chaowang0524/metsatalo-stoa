@@ -143,6 +143,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .ov-hl { fill-opacity: .22; stroke-width: 2.5; }
 .ov-hl.one { fill-opacity: .45; stroke-width: 4; }
 .ov-add { fill-opacity: .25; stroke-width: 2.5; stroke-dasharray: 6 3; }
+.handle { fill: #fff; stroke: #1d1d1b; stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: nwse-resize; }
+.handle[data-handle="1"], .handle[data-handle="3"] { cursor: nesw-resize; }
+.handle.rot { fill: var(--accent); stroke: #fff; cursor: grab; }
+#layer-edits [data-added] { cursor: move; }
 .badge-c { stroke: #fff; vector-effect: non-scaling-stroke; stroke-width: 1.5; }
 .badge-t { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none;
   font-family: -apple-system, Helvetica, Arial, sans-serif; }
