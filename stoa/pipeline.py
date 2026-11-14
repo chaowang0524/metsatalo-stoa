@@ -260,6 +260,24 @@ TOOLS = [
         "dxf", dxf_tools.dxf_total_area,
     ),
     Tool(
+        "dxf_baseboard_length",
+        "Linear metres of baseboard (skirting, Sockelleiste, plinthe, jalkalista): room "
+        "outlines where they run along walls or under windows; door openings and open "
+        "sides are left out. One room, rooms with a label, one apartment, or all indoor "
+        "rooms. Set exclude_wet to leave out bathrooms/WCs (tiled).",
+        {
+            "room": _s("One room: number (e.g. '2.10') or unique name", True),
+            "label": _s("Only rooms with this name label", True),
+            "apartment": _s("Apartment letter, e.g. 'A'", True),
+            "exclude_labels": {"type": "array", "items": {"type": "string"}, "_optional": True,
+                               "description": "Room labels to leave out"},
+            "include_outdoor": {"type": "boolean", "description": "Include balconies etc.", "_optional": True},
+            "exclude_wet": {"type": "boolean", "_optional": True,
+                            "description": "Leave out bathrooms, showers and WCs"},
+        },
+        "dxf", dxf_tools.dxf_baseboard_length,
+    ),
+    Tool(
         "dxf_room_list",
         "Table of all rooms (number, name, area, apartment). For open-ended questions; "
         "you then write the answer.",

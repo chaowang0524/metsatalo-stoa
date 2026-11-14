@@ -302,3 +302,96 @@ def dxf_room_list(path: str) -> Answer:
         for r in plan.rooms
     ]
     return Answer(value=rows, method="DXF room table", evidence=[_ev_room(r) for r in plan.rooms])
+
+
+# ---- baseboards (skirting) -----------------------------------------------------
+
+WET = re.compile(r"\bbad\b|badezimmer|dusche|douche|bath|salle d.eau|salle de bain|bagno|doccia|\bwc\b|toilet|lavabo", re.I)
+SKIRTING_TOL = 0.03  # room outlines sit ~1 mm off the wall face
+MIN_RUN = 0.05  # shorter pieces are corner slivers
+
+
+@functools.lru_cache(maxsize=32)
+def _wall_faces(path: str):
+    """Walls and windows (a baseboard runs under a window) as one buffered shape."""
+    from shapely.ops import unary_union
+    msp = ezdxf.readfile(path).modelspace()
+    polys = [p for e in msp.query('LWPOLYLINE[layer=="WALL" | layer=="WINDOW"]') if (p := _poly(e)) is not None]
+    return unary_union(polys).buffer(SKIRTING_TOL)
+
+
+def skirting_runs(path: str, r: Room) -> list:
+    """The parts of a room's outline that lie against a wall or window. Door openings
+    and open sides (a corridor open to the living room) are gaps in the walls, so
+    they drop out without being measured separately."""
+    from shapely.ops import linemerge
+    on = r.polygon.boundary.intersection(_wall_faces(path))
+    parts = [g for g in getattr(on, "geoms", [on]) if g.geom_type in ("LineString", "MultiLineString")]
+    if not parts:
+        return []
+    merged = linemerge(parts) if len(parts) > 1 else parts[0]
+    return [g for g in getattr(merged, "geoms", [merged]) if g.length >= MIN_RUN]
+
+
+def _wet(r: Room) -> bool:
+    # Unnamed numbered rooms on these plans are bathrooms.
+    return not r.name or bool(WET.search(r.name))
+
+
+def _skirting_rooms(plan: Plan, room, label, apartment, exclude_labels, include_outdoor, exclude_wet) -> list[Room]:
+    if room:
+        key = _norm(room)
+        rooms = [r for r in plan.rooms if _norm(r.number) == key] or [
+            r for r in plan.rooms if _match_label(r, room)]
+        if not rooms:
+            raise ToolError(f"No room {room!r}. Rooms: {[r.label for r in plan.rooms if r.number][:60]}")
+        return rooms
+    rooms = [r for r in plan.rooms if r.number and (r.name or r.polygon.area >= 2.5)]
+    if label:
+        rooms = [r for r in rooms if _match_label(r, label)]
+    if apartment:
+        a = apartment.strip().upper()
+        if a not in plan.units:
+            raise ToolError(f"No apartment {apartment!r}. Apartments: {sorted(plan.units)}")
+        rooms = [r for r in rooms if r.unit == a]
+    if exclude_labels:
+        drop = {_norm(x) for x in exclude_labels}
+        rooms = [r for r in rooms if _norm(r.name) not in drop]
+    if exclude_wet:
+        rooms = [r for r in rooms if not _wet(r)]
+    if not include_outdoor:
+        rooms = [r for r in rooms if not r.outdoor]
+    if not rooms:
+        raise ToolError("No rooms match those filters.")
+    return rooms
+
+
+def dxf_baseboard_length(
+    path: str, room: str | None = None, label: str | None = None, apartment: str | None = None,
+    exclude_labels: list[str] | None = None, include_outdoor: bool = False,
+    exclude_wet: bool = False,
+) -> Answer:
+    """Linear metres of baseboard: each room's outline where it runs along a wall or
+    window, so door openings and open sides are left out."""
+    plan = load_plan(path)
+    rooms = _skirting_rooms(plan, room, label, apartment, exclude_labels, include_outdoor, exclude_wet)
+    total, evidence, lines = 0.0, [], []
+    for r in rooms:
+        runs = skirting_runs(path, r)
+        length = sum(g.length for g in runs)
+        total += length
+        perimeter = r.polygon.boundary.length
+        lines.append(f"{r.label}: {length:.2f} m of {perimeter:.2f} m perimeter "
+                     f"({perimeter - length:.2f} m at doors/openings)")
+        evidence += [Evidence(ref=f"{r.handle}:sk{i}", label=f"{r.label} baseboard",
+                              value=round(g.length, 3), bbox=g.bounds) for i, g in enumerate(runs)]
+    wet = [r.label for r in rooms if _wet(r)]
+    note = "\n".join(lines)
+    if wet and not room:
+        note += f"\nIncludes wet rooms, usually tiled instead (exclude_wet=true leaves them out): {', '.join(wet)}"
+    return Answer(
+        value=round(total, 2), unit="m",
+        method=f"DXF room outlines along WALL/WINDOW geometry (±{SKIRTING_TOL * 100:.0f} cm), "
+               f"door openings and open sides excluded; {len(rooms)} rooms",
+        evidence=evidence, note=note,
+    )

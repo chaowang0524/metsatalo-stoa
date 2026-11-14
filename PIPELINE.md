@@ -118,6 +118,15 @@ CubiCasa 中以 `How many` / `Kuinka monta` 开头的计数题会先辨认住宅
 - 有管道的模型会在路由提示里加一行管道概况。clinic 模型的 7 道测试题都在一次路由内答对，每题约 $0.0005。
 - UI：`stoa.ui.facts` 用模型几何为每层生成一张管道平面图，按系统着色，每个构件按 GlobalId 都能点选，问答证据直接高亮（`ifc_models/bsc-clinic_clinic-plumbing_piping-level-1/2`）。
 
+### 踢脚线：`dxf_baseboard_length`
+
+计算 Swiss DXF 平面图上踢脚线的延米数：取房间轮廓中贴着墙或窗的部分（WALL/WINDOW 几何外扩 3 cm），窗下视为有墙。门洞和开放边是墙上的缺口，会自动排除，不用另外识别门宽。
+
+- 在 77 间卧室（Zimmer）上验证：不贴墙部分的中位数是 0.82 m，正好一个门宽。偏大的房间，逐个画出来核对，都是多扇门或双开门。
+- 可以选单个房间、某个标签、某户，或者全部室内房间；`exclude_wet` 去掉卫生间和 WC（各语言的名称，以及未命名的编号房间）。
+- 证据是每一段踢脚线（`<房间句柄>:sk<i>`）。`stoa.ui.facts` 把它们画成 4 cm 宽的线带，在 "Lengths" 组里高亮。
+- 尚未处理：厨房橱柜背后的墙仍计入踢脚线；IFC 模型（IfcSpace）还没有对应工具。
+
 ## 模型配置与评测
 
 ### CubiCasa 同题对照

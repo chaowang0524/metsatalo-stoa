@@ -202,6 +202,19 @@ def swiss_facts(dxf_path: Path) -> dict:
                            unit="m2", value=tot.value, method=tot.method, kind="room"))
     except dxf_tools.ToolError:
         pass
+    try:
+        sk = dxf_tools.dxf_baseboard_length(str(dxf_path))
+        runs = {(r.handle, i): g for r in plan.rooms for i, g in enumerate(dxf_tools.skirting_runs(str(dxf_path), r))}
+        items = []
+        for e in sk.evidence:
+            handle, i = e.ref.split(":sk")
+            band = runs[(handle, int(i))].buffer(0.04, cap_style=2, join_style=2)
+            if band.geom_type == "Polygon":
+                items.append({"ref": e.ref, "label": e.label, "value": e.value, "shape": {"poly": frame.poly(band)}})
+        facts.append(_fact("skirting", "Lengths", "Baseboards (skirting)", items, unit="m",
+                           value=sk.value, method=sk.method, kind="skirting"))
+    except dxf_tools.ToolError:
+        pass
     for k in sorted(plan.units):
         rs = [r for r in numbered if r.unit == k and not r.outdoor]
         if rs:
