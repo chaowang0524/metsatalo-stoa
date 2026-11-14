@@ -1,6 +1,6 @@
 # Stoa: verifiable answers about construction drawings
 
-Pipeline design and Verda rules: `VERDA_ENDPOINT_GUIDELINES.md`. Challenge briefs: `challenge.md`, `side_quest.md`. UI concept: `UI_IDEA.md`.
+Current pipeline (flowchart): `PIPELINE.md`. Verda rules: `VERDA_ENDPOINT_GUIDELINES.md`. Challenge briefs: `challenge.md`, `side_quest.md`. UI concept: `UI_IDEA.md`.
 
 ## Run
 

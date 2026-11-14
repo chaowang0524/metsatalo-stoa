@@ -32,7 +32,7 @@ class Profile:
     route: str  # picks tools, composes answers from IFC/DXF tables
     table: str  # composes answers from PDF schedule text (pdf_page_text)
     vision: str  # reads rendered drawings
-    vision_thinking: bool = False  # reasoning on for vision calls (kimi only)
+    vision_effort: str | None = None  # reasoning_effort for vision calls; None = off
 
 
 # Benchmark on 200 questions (VERDA_LOG.md, 2026-11-14): deepseek routes
@@ -42,7 +42,9 @@ PROFILES = {
     "deepseek": Profile("deepseek", "deepseek", "deepseek"),
     "kimi": Profile("kimi", "kimi", "kimi"),
     "nemotron": Profile("nemotron", "nemotron", "nemotron"),
-    "hybrid": Profile(route="deepseek", table="kimi", vision="kimi", vision_thinking=True),
+    # Default effort ran a median 4.5k reasoning tokens per drawing and hit the
+    # 12k cap on 25% of calls; "low" uses ~250.
+    "hybrid": Profile(route="deepseek", table="kimi", vision="kimi", vision_effort="low"),
 }
 ROUTER = os.environ.get("STOA_ROUTER", "hybrid")
 
@@ -241,7 +243,7 @@ def _source_path(tool: Tool, info: FileInfo) -> str:
 def _run(tool: Tool, info: FileInfo, args: dict, ctx: dict, prof: Profile) -> Answer:
     if tool.name == "ask_vision_model":
         return tool.fn(_source_path(tool, info), args.get("question", ""), context=ctx,
-                       endpoint=prof.vision, thinking=prof.vision_thinking)
+                       endpoint=prof.vision, effort=prof.vision_effort)
     return tool.fn(_source_path(tool, info), **args)
 
 
@@ -257,7 +259,7 @@ def answer(path: str | Path, question: str, context: dict | None = None, router:
     # Only the vision model applies (raster drawing): skip the routing call.
     if [t.name for t in tools] == ["ask_vision_model"]:
         res.answer = vision_tools.ask_vision_model(str(info.image), question, context=ctx,
-                                                   endpoint=prof.vision, thinking=prof.vision_thinking)
+                                                   endpoint=prof.vision, effort=prof.vision_effort)
         res.calls.append({"tool": "ask_vision_model", "args": {"question": question}})
         res.add_usage(res.answer.usage)
         return res

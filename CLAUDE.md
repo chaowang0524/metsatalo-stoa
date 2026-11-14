@@ -10,9 +10,23 @@ Judging is split evenly (25% each) across: answer accuracy, visualization of rea
 
 ## Environment
 
-- Python 3.13 venv in `.venv`, managed with `uv` (`uv pip install <pkg>`, `uv run python <script>`). No `pyproject.toml` or tests exist yet.
-- LLM access goes through an OpenAI-compatible endpoint (Verda inference). `inference.py` is the minimal example: it reads `VERDA_INFERENCE_BASE_URL` and `VERDA_INFERENCE_API_KEY` from the environment and calls model `deepseek-4-1-flash-1017`. Responses may put the text in `reasoning_content` rather than `content`. Log `resp.usage`, since cost is a judging criterion.
-- `secreat.toml` holds credentials. Don't print it or commit it.
+- Python 3.13 venv in `.venv`, managed with `uv` (`uv pip install <pkg>`, `uv run python <script>`). No `pyproject.toml` or tests exist yet. Includes torch (MPS on the Mac) for the CubiCasa5K model.
+- `PIPELINE.md` describes the current answering pipeline and benchmark results. `VERDA_LOG.md` records each endpoint decision and finding with a date. Add a line there when you learn something about an endpoint.
+- Credentials: `secreat.toml` and `.env` (gitignored, holds `NEMOTRON_API_KEY`, loaded by `stoa/verda.py`). `VERDA_KIMI` is exported in `~/.zshrc`, so run `source ~/.zshrc` before Kimi calls from a non-interactive shell. Never print or commit any of these.
+
+## Verda endpoints
+
+- Every LLM call goes through `stoa.verda.chat(purpose, messages, endpoint=...)`, which appends one line per call (tokens, latency, `cost_usd`) to `logs/verda_calls.jsonl`. Don't call the OpenAI client directly. Each endpoint is one module in `endpoints/verda/` with `MODEL`, prices and `DEFAULTS`.
+- `deepseek` (`deepseek-4-1-flash-1017`, $0.15/$0.60 per M tokens): cheap and reliable at tool calling. It **does** read images sent as `image_url` data URIs, even though `usage` reports only a few hundred prompt tokens for them. The gateway has no `/v1/files`, so DeepSeek's `file_id` image input isn't available.
+- `kimi` (`kimi-k3-1-pro`, $2/$10): better at reading drawings and schedules. Reasoning is off by default (`extra_body={"thinking": {"type": "disabled"}}`). With reasoning off it sometimes skips tools and makes numbers up, so don't use it as the router. `reasoning_effort="low"` limits reasoning to a few hundred tokens. The default effort used up to 12k.
+- `nemotron` (Nemotron 3.5 Super VL, a dedicated container, no per-token price): calls have taken ~250 s at times (cold start or overload), so the benchmark left it out.
+- The text may arrive in `reasoning_content` instead of `content`. Use `verda.text_of(resp)`.
+
+## Pipeline and evaluation
+
+- `stoa/pipeline.py`: file inspection → the router LLM picks a tool → deterministic tool → answer with evidence. A `Profile` sets which endpoint routes, which composes answers from PDF schedule text, and which reads drawings. The default is `hybrid` (deepseek routes, kimi does schedules and vision at low effort). Set `STOA_ROUTER` or `--router` to change it.
+- `uv run python -m stoa.eval --per-source 40 --router hybrid` writes `out/eval_<profile>_<time>.jsonl`. `uv run python -m stoa.compare out/eval_a.jsonl out/eval_b.jsonl` compares runs on shared questions and judges text answers against the reference with deepseek. Use seed 0 with the same `--per-source` so runs are comparable.
+- CubiCasa5K model (`stoa/tools/cubicasa_tools.py`, still experimental and not wired into the pipeline): needs the repo cloned to `./CubiCasa5k` (gitignored) and `model_best_val_loss_var.pkl` in it. It caches results per drawing in `out/cubicasa_cache/`. Inputs are capped at 1024 px because the authors' post-processing blows up on big plans. **Leakage:** 197 of the 241 preview drawings are in the model's train split. Judge it only on test/val drawings (`uv run python -m stoa.cubicasa_probe`). Weights are CC BY-NC 4.0, so credit Kalervo et al. 2019.
 
 ## Dataset (`junction-dataset-preview/`)
 

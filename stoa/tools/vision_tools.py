@@ -36,8 +36,9 @@ def _png_bytes(path: Path, page: int = 0) -> bytes:
 
 
 def ask_vision_model(path: str, question: str, page: int = 0, context: dict | None = None,
-                     endpoint: str = "kimi", thinking: bool = False) -> Answer:
-    """`thinking` turns kimi's reasoning back on (it is off in its DEFAULTS)."""
+                     endpoint: str = "kimi", effort: str | None = None) -> Answer:
+    """`effort` ("low", "medium", "high") turns kimi's reasoning back on at that
+    reasoning_effort; it is off in kimi's DEFAULTS."""
     b64 = base64.b64encode(_png_bytes(Path(path), page)).decode()
     resp = verda.chat(
         "vision fallback",
@@ -50,9 +51,9 @@ def ask_vision_model(path: str, question: str, page: int = 0, context: dict | No
         }],
         context=context,
         endpoint=endpoint,
-        # Reasoning counts against max_tokens; counting symbols took up to 6k.
-        max_tokens=12000 if thinking else 400,
-        **({"extra_body": {"thinking": {"type": "enabled"}}} if thinking else {}),
+        # Reasoning counts against max_tokens: "low" used ~250, default up to 12k.
+        max_tokens=4000 if effort else 400,
+        **({"reasoning_effort": effort, "extra_body": {"thinking": {"type": "enabled"}}} if effort else {}),
         temperature=0,
     )
     data = parse_llm_answer(verda.text_of(resp))
