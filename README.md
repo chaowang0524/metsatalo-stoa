@@ -47,7 +47,7 @@ A three-minute tour:
 3. **Human in the loop.** The engineer has the last word on every annotation.
    On raster scans the objects come from a vision model, which makes mistakes, so does human. Edits are saved on the server per drawing, so the corrected plan is what the next
    person sees, and what Cost and Export use. 
-4. **Ask a question.** Click "💬 Ask a question" and type in any language, for
+4. **Ask a question.** For further information on the floor plan, click "💬 Ask a question" and type in any language, for
    example *"How many windows are there?"*, *"What is the total area of the
    bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
    badged **exact** (computed from vector or BIM data) or **model answer ·

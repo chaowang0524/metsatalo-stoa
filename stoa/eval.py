@@ -159,7 +159,10 @@ def print_summary(rows: list[dict], router: str) -> None:
 
 
 def main() -> None:
+    global DATASET
     ap = argparse.ArgumentParser()
+    ap.add_argument("--dataset", type=Path, default=DATASET,
+                    help="folder with questions.jsonl and data/ (default: junction-dataset-preview)")
     ap.add_argument("--source")
     ap.add_argument("--type", dest="question_type", choices=["text", "count", "area", "length", "volume", "other"],
                     help="keep only this question type AFTER sampling (same questions as a full run)")
@@ -188,6 +191,7 @@ def main() -> None:
         print_summary(rows, router)
         return
 
+    DATASET = args.dataset
     qs = load(args)
     if args.router:
         pipeline.ROUTER = args.router
