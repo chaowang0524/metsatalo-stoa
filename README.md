@@ -31,8 +31,7 @@ fallback, but they won't replace the deterministic part.
 
 ## Try it: live demo
 
-Open **https://65-108-33-73.sslip.io** and log in with user `reviewer` and
-password `junction2026`.
+Open **https://65-108-33-73.sslip.io**. No login is needed.
 
 The preview dataset's drawings are already loaded. "Ask", "3D" and image
 uploads call paid models, so each click costs a few cents (image generation takes ~30s). Everything else runs
