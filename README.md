@@ -28,7 +28,7 @@ Open **https://65-108-33-73.sslip.io** and log in with user `reviewer` and
 password `junction2026`.
 
 The preview dataset's drawings are already loaded. "Ask", "3D" and image
-uploads call paid models, so each click costs a few cents. Everything else runs
+uploads call paid models, so each click costs a few cents (image generation takes ~30s). Everything else runs
 without an LLM.
 
 A three-minute tour:
@@ -56,7 +56,7 @@ A three-minute tour:
 5. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
    material and labour prices. Each price links to its source (Taloon.com,
    K-Rauta, or published hourly rates). You can overwrite any quantity or price,
-   then "Submit" freezes a quote. Its `/quote/<id>` link lets a client approve
+   then "Send quote…" freezes a quote for internal approval or the client. Its `/quote/<id>` link lets a client approve
    it, ask for changes, print it or download a CSV.
 6. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF.
 7. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
@@ -73,11 +73,6 @@ A three-minute tour:
    this to test us on your own drawings.
 
 ## Check the results yourself 
-Use the **Web UI**
-
-```bash
-uv run uvicorn stoa.ui.server:app --port 8000   # open http://localhost:8000
-```
 
 You don't need our evaluation scripts. Take drawings from the dataset, upload
 them in the live demo, and compare what the UI says with the reference answers
@@ -112,9 +107,6 @@ test use drawings from the **full dataset** that we have not seen.
    cause on the plan, such as a missed window or a neighbouring flat counted
    too, and fix it with a click.
 
-The [Results](#results) table below says what to expect per source. Answers from CAD and
-BIM data should match. Scanned plans are a vision model's first draft, which is
-why every object is drawn on the plan for checking.
 
 ## Run the full evaluation (for reviewers who want to test the evaluation set)
 
@@ -147,7 +139,7 @@ accuracy, cost and latency per source at the end.
 |---|---|
 | Grounded facts, at a glance | Engineers can component counts and room areas for every plan as they are pre-computed and straightforwardly shown on the plan. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
 | Live editing on site | Engineers get to add, remove or stamp doors, windows, fixtures and other components on the plan. Counts update straight away |
-| Cost estimate, faster | Engineers get the cost at once with quantities × cited Finnish material and labour prices which are also editable. "Submit" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
+| Cost estimate, faster | Engineers get the cost at once with quantities × cited Finnish material and labour prices which are also editable. "Send quote…" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
 | Human in the loop | The counting, model, the cost and even previous human annotations can be wrong. Every object stays visible and editable, edits are saved per drawing, and ⌘Z undoes them |
 | Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
 | Cost logging | Every model call is logged with its tokens, latency and USD cost (`logs/verda_calls.jsonl`) |

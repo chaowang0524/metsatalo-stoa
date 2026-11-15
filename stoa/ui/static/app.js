@@ -1284,7 +1284,7 @@ function numCell(l, field, base, value, cls = "") {
 
 function quoteStatus(lines) {
   const q = state.quotes[0];
-  if (!q) return [h("span", { className: "st", textContent: "Draft" }), "not submitted yet"];
+  if (!q) return [h("span", { className: "st", textContent: "Draft" }), "not sent yet"];
   const stale = q.sig !== costSig(lines);
   const label = { submitted: "Awaiting review", approved: "Approved", changes: "Changes requested" }[q.status] || q.status;
   const when = new Date(q.created).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
@@ -1292,7 +1292,7 @@ function quoteStatus(lines) {
     h("span", { className: `st ${q.status}`, textContent: `v${q.version} · ${label}` }),
     h("a", { href: `/quote/${q.id}`, target: "_blank", textContent: `to ${q.to === "client" ? "client" : "approval"} · ${when}` }),
     q.decision?.comment ? h("span", { textContent: `“${q.decision.comment}”${q.decision.by ? ` · ${q.decision.by}` : ""}` }) : "",
-    stale ? h("span", { className: "st stale", textContent: "edited since: resubmit" }) : "",
+    stale ? h("span", { className: "st stale", textContent: "edited since: send a new version" }) : "",
   ];
 }
 
@@ -1363,7 +1363,7 @@ function renderCost() {
     sources,
     h("div", { className: "cost-actions" },
       h("button", { textContent: "⤓ CSV", title: "Download the estimate as a spreadsheet", onclick: () => exportCostCSV(lines, t) }),
-      h("button", { className: "primary", textContent: state.quotes[0] ? "Resubmit…" : "Submit for approval…", onclick: openSubmit })),
+      h("button", { className: "primary", textContent: state.quotes[0] ? "Send new version…" : "Send quote…", title: "Send for internal approval or to the client", onclick: openSubmit })),
   );
   pane.scrollTop = scroll;
   if (focus) pane.querySelector(`[data-cell="${CSS.escape(focus)}"]`)?.focus();
@@ -1420,13 +1420,17 @@ function openSubmit() {
     ...(est ? [h("label", { className: "warn" }, h("input", { type: "checkbox", required: true, name: "est" }),
       "I know some unit prices are unverified estimates (they are flagged in the quote).")] : []));
   try { form.elements.by.value ||= localStorage.getItem("stoa.by") || ""; } catch {}
+  submitLabel();
   dlg.showModal();
 }
+// The button names where the quote goes, so it says what will happen.
+const submitLabel = () => { $("#submit-form [type=submit]").textContent = $("#submit-form").elements.to.value === "client" ? "Send to client" : "Send for approval"; };
+$("#submit-form").onchange = (e) => { if (e.target.name === "to") submitLabel(); };
 $("#submit-form").onsubmit = async (e) => {
   e.preventDefault();
   const form = e.currentTarget, btn = form.querySelector("[type=submit]");
   const lines = costLines(), t = costTotals(lines);
-  btn.disabled = true; btn.textContent = "Submitting…";
+  btn.disabled = true; btn.textContent = "Sending…";
   try {
     const plan = await asDataURL(await toBlob(await planCanvas(1800, true), "image/jpeg", 0.85));
     const r = await fetch(`/api/quotes/${state.doc.id}`, {
@@ -1441,12 +1445,12 @@ $("#submit-form").onsubmit = async (e) => {
     $("#submit-dlg").close(); form.elements.note.value = "";
     renderCost();
     const url = `${location.origin}/quote/${q.id}`;
-    navigator.clipboard?.writeText(url).then(() => toast(`v${q.version} submitted · review link copied`, 5000), () => toast(`v${q.version} submitted`, 5000));
+    navigator.clipboard?.writeText(url).then(() => toast(`v${q.version} sent · review link copied`, 5000), () => toast(`v${q.version} sent`, 5000));
     window.open(url, "_blank");
   } catch (err) {
-    toast(`Submit failed: ${err.message}`, 6000);
+    toast(`Sending failed: ${err.message}`, 6000);
   } finally {
-    btn.disabled = false; btn.textContent = "Submit";
+    btn.disabled = false; submitLabel();
   }
 };
 
