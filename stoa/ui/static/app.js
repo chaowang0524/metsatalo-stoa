@@ -92,7 +92,10 @@ function optionText(d) {
   return tag ? `${d.file}  ·  ${tag}` : d.file;
 }
 async function loadIndex(want) {
-  const list = await (await fetch("/api/drawings")).json();
+  want ||= decodeURIComponent(location.hash.slice(1));
+  // an uploaded IFC model on its own has no plan to show; keep it only right after its upload
+  const list = (await (await fetch("/api/drawings")).json())
+    .filter((d) => !(d.source === "uploads" && /\.ifc$/i.test(d.file)) || d.id === want);
   const picker = $("#picker");
   picker.replaceChildren();
   const groups = {};
@@ -105,7 +108,6 @@ async function loadIndex(want) {
   const byId = Object.fromEntries(list.map((d) => [d.id, d]));
   drawings = [...picker.options].map((o) => byId[o.value]); // picker order = arrow order
   if (!list.length) { toast("No facts yet: run  uv run python -m stoa.ui.facts, or upload a drawing", 10000); return; }
-  want ||= decodeURIComponent(location.hash.slice(1));
   await loadDoc(byId[want] ? want : drawings[0].id);
   watchUploads();
 }
