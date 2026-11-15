@@ -1,61 +1,70 @@
-# 图纸问答流程
+# Answering pipeline
 
-> **默认配置：`hybrid`**
+> **Default profile: `hybrid`**
 >
-> DeepSeek 选择工具；Gemini 4 Hydrogen 读取 CubiCasa 图纸；Kimi 处理 PDF 表格与其他视觉问题。
+> DeepSeek picks the tools; Gemini 4 Hydrogen reads CubiCasa floor plans; Kimi handles PDF schedules and all other vision.
 >
-> 视觉推理统一使用 `low`，输出上限为 4096 tokens。
+> Vision runs at `low` reasoning effort with a 4096-token output cap.
 
-## 总体流程
+## Overview
 
 ```mermaid
-%%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 28, "rankSpacing": 44}, "themeVariables": {"fontFamily": "Arial, Microsoft YaHei, sans-serif", "fontSize": "14px", "lineColor": "#94a3b8"}}}%%
+%%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 28, "rankSpacing": 44}, "themeVariables": {"fontFamily": "Arial, sans-serif", "fontSize": "14px", "lineColor": "#94a3b8"}}}%%
 flowchart TB
-    subgraph INPUT["输入与识别"]
+    subgraph INPUT["Input and inspection"]
         direction TB
-        A(["图纸 + 自然语言问题"])
-        B{"识别文件与关联数据<br/>inspect_file · 无模型调用"}
-        A --> B
+        A(["Drawing + natural-language question"])
+        U{"Web UI only: advice question?<br/>'do we need more doors / toilets?'"}
+        V["Rule check on the plan's facts<br/>DeepSeek picks the rule · shapely checks rooms"]
+        B{"Inspect file and linked data<br/>inspect_file · no LLM"}
+        A --> U
+        U -->|"yes"| V
+        U -->|"no"| B
     end
 
-    subgraph STRUCTURED["结构化数据问答"]
+    subgraph STRUCTURED["Structured data"]
         direction TB
-        R["DeepSeek 路由<br/>选择工具 · 填写参数"]
-        T{"工具返回什么？"}
-        D["代码计算答案<br/>计数 · 面积 · 工程量求和"]
-        I["代码提取资料<br/>构件属性 · 模型概况 · 房间清单"]
-        C1["DeepSeek 组织答案<br/>根据工具结果归纳与计算"]
-        P["代码提取 PDF 内容<br/>表格行 · 图例 · 说明文字"]
-        C2["Kimi 组织答案<br/>查表与文字理解"]
+        R["DeepSeek router<br/>picks tools · fills arguments"]
+        T{"What does the tool return?"}
+        D["Code computes the answer<br/>counts · areas · lengths · schedule sums"]
+        I["Code extracts facts<br/>element tables · model overview · room list"]
+        C1["DeepSeek composes the answer<br/>from the tool output, citing evidence ids"]
+        P["Code extracts PDF content<br/>schedule rows · legends · notes"]
+        C2["Kimi composes the answer<br/>schedule lookup and reading"]
         R --> T
-        T -->|"直接给出结果"| D
-        T -->|"IFC / DXF 资料"| I
-        T -->|"PDF 表格或文字"| P
+        T -->|"terminal tool, answers fully"| D
+        T -->|"IFC / DXF info tool"| I
+        T -->|"PDF rows or page text"| P
         I --> C1
         P --> C2
+        C1 -.->|"more tools, up to 4 turns"| R
     end
 
-    subgraph VISION["视觉问答"]
+    subgraph VISION["Vision"]
         direction TB
-        S{"图纸来源"}
-        G["Gemini 4 Hydrogen<br/>CubiCasa 计数：辨认范围 · 列出对象"]
-        N["代码按对象清单计数<br/>保留住宅范围与逐项位置"]
-        K["Kimi<br/>其他栅格图与视觉回退"]
-        S -->|"CubiCasa"| G
+        S{"Drawing source"}
+        W["Gemini 4 Hydrogen · windows<br/>verifies numbered detector boxes · adds missed windows"]
+        G["Gemini 4 Hydrogen · other counts<br/>finds the dwelling · lists every object"]
+        N["Code counts the list<br/>keeps scope and per-object position"]
+        K["Kimi<br/>other raster drawings and vision fallback"]
+        S -->|"CubiCasa 'How many … windows'"| W
+        S -->|"CubiCasa 'How many …'"| G
+        W --> N
         G --> N
-        S -->|"其他来源"| K
+        S -->|"other sources or question forms"| K
     end
 
-    B -->|"IFC / DXF / PDF 文字层"| R
-    B -->|"PNG / JPG / 扫描件"| S
-    T -->|"需要看图"| K
+    B -->|"IFC / DXF / PDF text layer"| R
+    B -->|"PNG / JPG / scanned PDF<br/>skip the router"| S
+    T -->|"ask_vision_model"| S
 
+    V --> OUT
     D --> OUT
     C1 --> OUT
     C2 --> OUT
     N --> OUT
     K --> OUT
-    OUT(["返回结果<br/>答案 · 单位 · 方法 · 证据 · 确定性标记"])
+    OUT(["Result<br/>answer · unit · method · evidence · deterministic flag"])
 
     classDef input fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1.5px
     classDef code fill:#ecfdf5,stroke:#10b981,color:#065f46,stroke-width:1.5px
@@ -66,98 +75,179 @@ flowchart TB
 
     class A input
     class B,D,I,P,N code
-    class R,C1 deepseek
-    class G,K,C2 model
-    class T,S decision
+    class R,C1,V deepseek
+    class G,W,K,C2 model
+    class T,S,U decision
     class OUT output
     style INPUT fill:#f8fafc,stroke:#e2e8f0
     style STRUCTURED fill:#f8fafc,stroke:#e2e8f0
     style VISION fill:#faf8ff,stroke:#e9d5ff
 ```
 
-**阅读方式：** 绿色表示代码提取与计算，蓝色表示 DeepSeek，紫色表示 Gemini 或 Kimi，深色节点汇总最终结果。
+**Legend:** green is code (extraction and computation), blue is DeepSeek, purple is Gemini or Kimi, and the dark node is the final result.
 
-能由单个终结工具直接回答的问题，首轮即可返回。信息工具的结果会交还模型；最多运行 4 轮，最后一轮要求模型作答。
+## Step by step
 
-终结工具通过 `answer_directly` 标记是否完整回答问题；部分测量值或需要解释、汇总的结果会继续交给模型。IFC 文本回答可查询精确 GUID、内外墙分类及来源、材料层厚度、项目位置，并使用代码计算的数量、百分比和尺寸统计。DeepSeek 路由上限为 800 tokens，答案组织上限为 4096 tokens。
+### 0. Advice questions (web UI only)
 
-只复测同一批中的文本题，可在原评测命令后加 `--type text`；筛选发生在抽样之后，保持题目 ID 一致。
+Before the pipeline runs, `/api/ask` passes the question to `stoa/ui/advice.py`. If it is an advice question ("do we need more doors / windows / toilets?", any language), DeepSeek picks one rule from `RULES` (~$0.0001) and labels rooms the multilingual `ROOM_TYPES` patterns don't know. Shapely then checks each room of the rule's types for the component on its boundary or inside it, using the plan's pre-computed facts with the engineer's edits applied. Only exact (CAD/BIM) boundary checks answer "Yes"; detected plans and fixture checks answer "Possibly… check". Any other question goes to `stoa.pipeline.answer`. The CLI and `stoa.eval` call the pipeline directly.
 
-## 结果与证据
+### 1. Inspect the file (`stoa/inspect_file.py`, no LLM)
 
-| 环节 | 返回的数据 | 可用于界面的展示 |
+| Input | Kind | Data used |
 | :--- | :--- | :--- |
-| 文件识别 | 文件类型、关联 IFC / DXF、可用工具 | 图纸信息卡片 |
-| 工具调用 | 工具名与参数：`Result.calls` | 展示调用过程与查询条件 |
-| 代码计算 | `value`、`unit`、`method`、`evidence[]` | 展示数值、计算方法及来源对象 |
-| 资料归纳 | 答案、解释、引用的证据 | 展示引用的构件或表格行 |
-| CubiCasa 计数 | 清单长度、住宅范围、逐项位置；`deterministic=False` | 核对漏数、重复与邻居残图 |
-| 其他视觉回答 | 模型估计与页面说明；`deterministic=False` | 标记为待核对，提示人工检查 |
+| `.ifc` | `ifc` | the model |
+| `.dxf` | `dxf` | the CAD entities |
+| `.pdf` / `.svg` | `vector_pdf` | the IFC it was rendered from (`<model>_<level>.pdf`), a sibling `.dxf` with the same stem, the PDF text layer, and the page itself for vision |
+| PDF without text and with fewer than 10 vector drawings | `raster` | scanned sheet: pixels only |
+| `.png` / `.jpg` / `.tif` / … | `raster` | pixels only |
 
-证据可包含 IFC `GlobalId`、DXF 实体句柄、PDF 文本或表格位置。界面可利用已有坐标与对象映射高亮证据；CubiCasa 计数提供房间与相对位置文字；窗户计数另外给出每扇窗的框。
+A raster file is a **floor plan** (CubiCasa-style) when its path contains a `cubicasa5k` directory. Uploads have no dataset path, so the UI passes `floor_plan=True` for uploaded images and scanned PDFs.
 
-CubiCasa 中以 `How many` / `Kuinka monta` 开头的计数题会先辨认住宅范围，排除邻居残图，并保留同一住宅的多个楼层。模型每列出一个对象，代码计数一次；评测文件保留完整清单。对象识别仍由模型完成，因此不标记为确定性答案。截断或无效清单记为失败，并保留调用费用。其他问法继续使用通用视觉提示词。
+The file kind decides which tools the router is offered. PDF schedule tools are only offered on sheets with no IFC or DXF behind them, because the model answers those exactly.
 
-**窗户计数（CubiCasa）**：Gemini 单独看图会系统性少数窗，主要漏掉长墙上并排的窗。现在的做法是：
+### 2. Raster shortcut
 
-1. 把 CubiCasa5K 检测器缓存的窗框编号画在图上，小图先放大到长边 2048 px；
-2. Gemini 逐个判断每个框是不是本户的窗（重复框只算一个、排除邻户），再沿墙补出没框到的窗，给出中心点；
-3. 计数 = 确认的框数 + 补充的窗数。确认的框沿用 UI 的 `window-<i>` 编号，补充的窗用模型给的点画框，所以答案里的每一扇窗都在图上有对应位置。
+When the only applicable tool is `ask_vision_model` (a raster drawing), the router call is skipped and the question goes straight to the vision model (section 5).
 
-没有检测器缓存的图，改用"逐面墙列出每扇窗及其坐标"的提示词。
+### 3. Routing (DeepSeek)
 
-在 44 道 test+val 窗题上（检测器没训练过这些图）：
+The system prompt carries the file line, plus:
 
-| 方法 | 两次运行的精确命中 | 误差在 ±1 以内 |
+- IFC: storey names bottom to top, so "first floor" or "basement" maps to a real storey on the first try, and a piping overview when the model has pipes;
+- DXF: the room labels on the plan with their counts;
+- PDF: every schedule rebuilt from the ruled grid (table id, columns, sample values) and a reminder to apply every qualifier as a separate filter.
+
+Routing is capped at 800 output tokens, answer composition at 4096 (Kimi always uses its own 4096 default).
+
+### 4. Tool loop
+
+Up to 4 turns. Each terminal tool has an `answer_directly` argument: the router sets it to true only if that one result answers every part of the question.
+
+- **Direct answer (the common case):** on the first turn, a single terminal tool with `answer_directly=true` returns its result as the answer. One LLM call in total.
+- **Composed answer:** otherwise the tool outputs go back to the model, which may call more tools or reply with JSON `{answer, unit, explanation, evidence}`. Once `pdf_page_text` or `pdf_table_rows` has run, the remaining turns use the table model (Kimi). On the last turn tools are switched off and the model must answer.
+- **Evidence ids:** each tool output ends with a numbered list (`e1`, `e2`, …) of the items it looked at. The model cites the ids it used, and only those are kept, so the UI highlights exactly what the answer counts or sums.
+- **Count check:** for a count answer, if the number disagrees with the number of distinct items cited (it said 9 and cited 8 rooms), the cited count wins and the note says "Corrected from 9". This is skipped after schedule rows or page text, where one row can carry a quantity.
+- **Errors:** a tool error is sent back to the model as `ERROR: …` so it can retry with other arguments. Tool output is truncated at 60,000 characters (IFC) or 15,000 (other) with an explicit "do not infer totals" marker. A final answer cut off at the token limit, an endpoint failure or running out of turns return an error; usage already billed is kept in the result.
+
+### 5. Vision (`stoa/tools/vision_tools.py`)
+
+| Case | Model (`hybrid`) | Method | Deterministic |
+| :--- | :--- | :--- | :--- |
+| CubiCasa, question starts with `How many` / `Kuinka monta`, about windows | Gemini | Detector boxes numbered on the image; model confirms or rejects each box and adds missed windows with a point; count = confirmed + added | No |
+| CubiCasa, other `How many` / `Kuinka monta` questions | Gemini | Model names the dwelling's extent (excluding fragments of neighbouring flats, keeping all floors of the same dwelling) and lists every object with its location; code counts the list | No |
+| Any other raster drawing, other question forms, or `ask_vision_model` called by the router | Kimi (Gemini under `hybrid_gemini` for raster) | General vision prompt: the model returns an answer and an explanation | No |
+
+A truncated or invalid object list is a failure, and its cost is kept.
+
+## Tools
+
+Terminal tools return the answer themselves; info tools return material the model composes an answer from.
+
+| Tool | Reads | Kind | What it does |
+| :--- | :--- | :--- | :--- |
+| `ifc_count` | IFC | terminal | Count elements of one IFC class, optionally on one storey |
+| `ifc_sum_quantity` | IFC | terminal | Sum a quantity (area, length, volume) over one class |
+| `ifc_group_quantity` | IFC | terminal | Group one class by type, thickness, material, storey, predefined type or internal/external |
+| `ifc_piping` | IFC | terminal | Pipe segments, fittings, valves, sanitary fixtures and pumps by system, size, material, storey or type |
+| `ifc_space_area` | IFC | terminal | Net floor area of one named room |
+| `ifc_space_breakdown` | IFC | terminal | All rooms of a storey (or every storey) with areas, grouped by function or listed |
+| `ifc_list_elements` | IFC | info | Element table: names, types, materials, layer thicknesses, Pset properties, size statistics; exact GUID lookup |
+| `ifc_model_facts` | IFC | info | Model overview: storeys, element counts, room names |
+| `dxf_count_symbols` | DXF | terminal | Doors, windows, toilets, washbasins, bathtubs, showers, apartments, rooms |
+| `dxf_count_rooms` | DXF | terminal | Rooms with a given name label |
+| `dxf_room_area` | DXF | terminal | Net floor area of one room |
+| `dxf_total_area` | DXF | terminal | Sum of room areas, by label and/or apartment; outdoor spaces optional |
+| `dxf_baseboard_length` | DXF | terminal | Linear metres of baseboard |
+| `dxf_room_list` | DXF | info | All rooms with number, name, area and apartment |
+| `pdf_table_query` | PDF schedules | terminal | Exact count / sum / max / min over filtered schedule rows, with ft²→m² conversion |
+| `pdf_table_rows` | PDF schedules | info | The filtered rows, every cell labelled with its column |
+| `pdf_page_text` | PDF text | info | Sheet text with table rows on one line |
+| `ask_vision_model` | image | terminal | Vision fallback (section 5) |
+
+## Results and evidence
+
+| Stage | Data returned | What the UI can show |
 | :--- | :--- | :--- |
-| 原清单提示词 | 21、20 | 25、24 |
-| 检测框 + 核验 | 24、24 | 29、29 |
-| 走完整 pipeline | 23 | 29 |
+| File inspection | file kind, linked IFC / DXF, available tools | drawing info card |
+| Tool calls | tool name and arguments: `Result.calls` | the call trace and query filters |
+| Code computation | `value`, `unit`, `method`, `evidence[]` | the number, how it was computed and the source objects |
+| Composed answer | answer, explanation, cited evidence | the cited elements or schedule rows |
+| CubiCasa count | list length, dwelling scope, per-object position; `deterministic=False` | check for missed, doubled or neighbouring objects |
+| Other vision | model estimate and page note; `deterministic=False` | marked for checking by the engineer |
 
-门题的情况相反：核验法 23、20，原清单提示词 24、25，所以门题保持原方案。试过但没采用的方案：只放大图片（无变化）；推理强度 medium/high（medium 24/44，high 19/44，且有 5 次失败）；2×2 分块（精确 8/44）；直接取模型与检测器结果的并集（精确 20/44）。核验时模型倾向全盘接受检测框，很少自己补窗（多数题新增 0 个），剩余误差主要来自参考答案的数法，例如手改扫描件上带中梃的窗。
+Evidence can be IFC `GlobalId`s, DXF entity handles, or PDF text and table positions. These are the same refs as the pre-computed facts, so the UI highlights evidence by lookup. CubiCasa counts give each object's room and relative position as text; window counts also give a box per window. Each result also records LLM calls, tokens and `cost_usd`.
 
-### IFC 分组统计：`ifc_group_quantity`
+### CubiCasa window counts
 
-一个 IFC 类按类型、厚度、材料、楼层、预定义类型（FLOOR/ROOF/BASESLAB）或内外墙分组，每组给出数量、占比、厚度（门窗给尺寸）以及可选的工程量合计，每个构件以 GlobalId 作为证据。传 `only` 时只返回一个组的数值，例如"250 mm 楼板的面积"。
+Gemini on its own systematically undercounts windows, mainly missing windows side by side on long walls. The current method:
 
-- 厚度依次取自：材料层集合 → Qto `Width` → Pset 中的 Thickness / Dicke / Standarddicke → 几何体积除以投影面积（楼板）或侧面积（墙），几何推算的结果取整到 5 mm 并标 "≈"。
-- 内外墙依次取自：`Pset_*Common.IsExternal` → CAD 图层名，例如 ArchiCAD 的 `Ebene` "Außenwände"。
-- 配筋：报告名称含 Bewehrung / Reinforcement / Rebar 的属性，并统计 `IfcReinforcingBar` 的数量。预览数据里没有真正的钢筋数据，只有保护层（c=2.0cm）这类属性，答案里会如实说明。
-- ifc_bench 同 40 题（seed 0）：文字题得分 51.2% → 63.7%，确定性答案占比 0% → 50%，成本基本不变（每 1000 题 $1.60 → $1.63）。
+1. Draw the numbered window boxes from the cached full-plan detection on the image (`out/cubicasa_cache/`), upscaling small scans to 2048 px on the long side.
+2. Gemini judges each box: is it a window of this dwelling (duplicate boxes count once, neighbouring flats are excluded)? It then walks each wall, adds windows no box covered and gives their centre points.
+3. Count = confirmed boxes + added windows. Confirmed boxes keep the UI's `window-<i>` ids, and added windows get a box around the model's point, so every window in the answer has a place on the plan.
 
-### 管道：`ifc_piping`（`stoa/tools/mep_tools.py`）
+Plans without a cached detection use a prompt that lists each window wall by wall with coordinates.
 
-统计管段（数量、长度）、管件、阀门、卫生器具和水泵，可按系统、管径、材料、楼层或类型分组；`what='all'` 时给出各系统的概况。IFC4 的 `IfcPipeSegment` 等类型和 IFC2X3 的 `IfcFlowSegment` 加类型对象两种写法都支持。
+On 44 test+val window questions (drawings the detector was not trained on):
 
-- 系统归属：先看 IfcSystem 分配，再看 Revit Pset `Mechanical."System Type"`。不用 `System Classification`：clinic 模型里有 999 个热水管件被标成了冷水，端口连接关系证明它们接在热水管上。
-- 管长：依次取 Qto → `Dimensions.Length` → 几何包围盒最长边（含竖直方向，立管也能算进去）。
-- 楼层：先取 Revit 的 `Constraints.Level`，再看空间包含关系。原因是 Revit 把 1359 个管件挂到了基础层上。
-- 卫生器具当量：热水组用 HWFU，冷水组用 CWFU，其余分组用 WFU。
-- 有管道的模型会在路由提示里加一行管道概况。clinic 模型的 7 道测试题都在一次路由内答对，每题约 $0.0005。
-- UI：`stoa.ui.facts` 用模型几何为每层生成一张管道平面图，按系统着色，每个构件按 GlobalId 都能点选，问答证据直接高亮（`ifc_models/bsc-clinic_clinic-plumbing_piping-level-1/2`）。
+| Method | Exact matches, two runs | Within ±1 |
+| :--- | :--- | :--- |
+| Original list prompt | 21, 20 | 25, 24 |
+| Detector boxes + verification | 24, 24 | 29, 29 |
+| Through the full pipeline | 23 | 29 |
 
-### 踢脚线：`dxf_baseboard_length`
+Doors go the other way: verification scored 23 and 20, the original list prompt 24 and 25, so doors keep the original method. Tried and not adopted: upscaling alone (no change); medium/high reasoning effort (medium 24/44, high 19/44 with 5 failures); 2×2 tiling (8/44 exact); the union of model and detector (20/44 exact). During verification the model tends to accept every box and rarely adds windows (usually 0 added); most remaining error comes from how the reference answer counts, e.g. mullioned windows on hand-edited scans.
 
-计算 Swiss DXF 平面图上踢脚线的延米数：取房间轮廓中贴着墙或窗的部分（WALL/WINDOW 几何外扩 3 cm），窗下视为有墙。门洞和开放边是墙上的缺口，会自动排除，不用另外识别门宽。
+### IFC grouped quantities: `ifc_group_quantity`
 
-- 在 77 间卧室（Zimmer）上验证：不贴墙部分的中位数是 0.82 m，正好一个门宽。偏大的房间，逐个画出来核对，都是多扇门或双开门。
-- 可以选单个房间、某个标签、某户，或者全部室内房间；`exclude_wet` 去掉卫生间和 WC（各语言的名称，以及未命名的编号房间）。
-- 证据是每一段踢脚线（`<房间句柄>:sk<i>`）。`stoa.ui.facts` 把它们画成 4 cm 宽的线带，在 "Lengths" 组里高亮。
-- 尚未处理：厨房橱柜背后的墙仍计入踢脚线；IFC 模型（IfcSpace）还没有对应工具。
+Groups one IFC class by type, thickness, material, storey, predefined type (FLOOR/ROOF/BASESLAB) or internal/external. Each group has a count, share, thickness (sizes for doors and windows) and an optional summed quantity, with each element's GlobalId as evidence. With `only` it returns one group's number, e.g. "area of the 250 mm slabs".
 
-## 模型配置与评测
+- Thickness comes from, in order: the material layer set → Qto `Width` → Pset Thickness / Dicke / Standarddicke → geometric volume divided by plan area (slabs) or side area (walls). Geometric values are rounded to 5 mm and marked "≈".
+- Internal/external comes from `Pset_*Common.IsExternal`, then the CAD layer name, e.g. ArchiCAD `Ebene` "Außenwände".
+- Reinforcement: reports properties whose names contain Bewehrung / Reinforcement / Rebar and counts `IfcReinforcingBar`. The preview has no real rebar data, only properties such as cover (c=2.0cm), and the answer says so.
+- ifc_bench, same 40 questions (seed 0): text score 51.2% → 63.7%, deterministic answers 0% → 50%, cost about the same ($1.60 → $1.63 per 1000 questions).
 
-### CubiCasa 同题对照
+### Piping: `ifc_piping` (`stoa/tools/mep_tools.py`)
 
-同一批 **30 题，seed 1024**；整图输入、`low` 推理强度、4096 token 上限。
+Counts pipe segments (number and length), fittings, valves, sanitary fixtures and pumps, grouped by system, size, material, storey or type; `what='all'` gives a per-system overview. Both IFC4 `IfcPipeSegment` etc. and IFC2X3 `IfcFlowSegment` plus type objects are supported.
 
-| 视觉模型 | 正确数 | 准确率 | 30 题估算费用 |
+- System: IfcSystem assignment first, then the Revit Pset `Mechanical."System Type"`. `System Classification` is not used: in the clinic model 999 hot-water fittings are labelled cold water, and the port connections show they sit on hot-water pipes.
+- Pipe length: Qto → `Dimensions.Length` → the longest side of the geometric bounding box (vertical included, so risers count).
+- Storey: Revit `Constraints.Level` first, then spatial containment, because Revit attached 1359 fittings to the foundation level.
+- Water fixture units: HWFU for hot-water groups, CWFU for cold-water groups, WFU for the rest.
+- Models with pipes get a piping overview line in the router prompt. All 7 clinic test questions were answered correctly in one routing call, about $0.0005 each.
+- UI: `stoa.ui.facts` draws a piping plan per storey from the model geometry, coloured by system; every element is selectable by GlobalId and answer evidence highlights directly (`ifc_models/bsc-clinic_clinic-plumbing_piping-level-1/2`).
+
+### Baseboards: `dxf_baseboard_length`
+
+Linear metres of baseboard on Swiss DXF plans: the parts of each room outline that run along a wall or window (WALL/WINDOW geometry buffered by 3 cm; under a window counts as wall). Door openings and open sides are gaps in the wall, so they drop out without detecting door widths.
+
+- Checked on 77 bedrooms (Zimmer): the median length not along a wall is 0.82 m, one door width. Every room above that, drawn and checked one by one, has several doors or a double door.
+- Scope: one room, a label, an apartment or all indoor rooms; `exclude_wet` drops bathrooms and WCs (names in every language, and unnamed numbered rooms).
+- Evidence is each baseboard segment (`<room handle>:sk<i>`). `stoa.ui.facts` draws them as 4 cm bands, highlighted in the "Lengths" group.
+- Not yet handled: walls behind kitchen cabinets still count; no equivalent tool for IFC models (IfcSpace).
+
+## Profiles and evaluation
+
+| Profile | Router | Schedules | CubiCasa vision | Other raster | Other vision |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`hybrid`** (default) | DeepSeek | Kimi | Gemini | Kimi | Kimi |
+| `hybrid_gemini` | DeepSeek | Kimi | Gemini | Gemini | Kimi |
+| `deepseek` / `kimi` / `nemotron` | one endpoint for everything | | | | |
+
+Set `STOA_ROUTER` or `--router` to change it. To rerun only the text questions of the same sample, add `--type text` to the eval command; filtering happens after sampling, so question ids stay the same.
+
+### CubiCasa head-to-head
+
+The same **30 questions, seed 1024**; whole-image input, `low` reasoning effort, 4096-token cap.
+
+| Vision model | Correct | Accuracy | Estimated cost for 30 questions |
 | :--- | ---: | ---: | ---: |
 | Kimi | 17 / 30 | 56.7% | $0.153496 |
-| **Gemini 4 Hydrogen · 当前默认** | **25 / 30** | **83.3%** | **$0.155036** |
+| **Gemini 4 Hydrogen · current default** | **25 / 30** | **83.3%** | **$0.155036** |
 
-这是小样本对照，结果不代表全数据集准确率。
+This is a small-sample comparison, not a full-dataset accuracy.
 
 ---
 
-配置定义见 [`stoa/pipeline.py`](stoa/pipeline.py)；端点决策与实验记录见 [`VERDA_LOG.md`](VERDA_LOG.md)。所有模型调用记录在 `logs/verda_calls.jsonl`。
+Profiles are defined in [`stoa/pipeline.py`](stoa/pipeline.py); endpoint decisions and experiments are in [`VERDA_LOG.md`](VERDA_LOG.md). Every model call is logged in `logs/verda_calls.jsonl`.
