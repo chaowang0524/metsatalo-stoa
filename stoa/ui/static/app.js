@@ -185,7 +185,9 @@ async function loadDoc(id) {
   $("#doc-title").textContent = doc.file;
   const any = doc.facts.length > 0;
   const det = any && doc.facts.every((f) => f.deterministic);
-  const basis = doc.source === "ifc_models" ? (doc.ifc ? "exact · from BIM model" : "exact · from plan SVG") : "exact · from CAD geometry";
+  // name the one file the exact facts were computed from (facts cached before `dxf` existed fall back to the stem)
+  const stem = doc.file.replace(/\.[^.]+$/, "");
+  const basis = doc.source === "ifc_models" ? `exact · from ${doc.ifc || stem + ".svg"}` : `exact · from ${doc.dxf || stem + ".dxf"}`;
   const cost = doc.cost_usd ? ` · $${doc.cost_usd.toFixed(2)}` : "";
   $("#doc-meta").replaceChildren(
     any ? h("span", { className: `badge ${det ? "det" : "model"}`, textContent: det ? basis

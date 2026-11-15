@@ -226,7 +226,7 @@ def swiss_facts(dxf_path: Path, svg_path: Path | None = None) -> dict:
 
     return {
         "id": f"swiss_dwellings/{stem}", "source": "swiss_dwellings", "file": f"{stem}.pdf",
-        "credit": CREDITS["swiss_dwellings"],
+        "dxf": dxf_path.name, "credit": CREDITS["swiss_dwellings"],
         "view": {"width": frame.width, "height": frame.height,
                  "background": f"/facts/{svg_path.relative_to(OUT).as_posix()}", "units_per_m": SCALE,
                  # DXF metres -> view: x' = (x - x0) * scale, y' = (y1 - y) * scale

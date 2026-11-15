@@ -176,7 +176,7 @@ def _facts(doc: dict) -> dict:
     path, kind, stem = Path(doc["path"]), doc["kind"], doc["id"].split("/", 1)[1]
     if kind == "dxf":
         f = swiss_facts(path.with_suffix(".dxf"), svg_path=DOCS / f"{stem}.svg")
-        return {"view": f["view"], "facts": f["facts"]}
+        return {"view": f["view"], "facts": f["facts"], "dxf": Path(doc["file"]).with_suffix(".dxf").name}
     if kind == "svg":
         f = ifc_facts(path)
         f["view"]["background"] = f"/uploads/{path.name}"
