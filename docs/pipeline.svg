@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 790" width="1000" height="790" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .t { font-size: 14px; font-weight: 600; text-anchor: middle; }
+      .s { font-size: 12px; text-anchor: middle; }
+      .lbl { font-size: 11px; fill: #64748b; }
+      .ln { fill: none; stroke: #94a3b8; stroke-width: 1.6; }
+      .code { fill: #ecfdf5; stroke: #10b981; } .code-t { fill: #065f46; }
+      .ds { fill: #eff6ff; stroke: #3b82f6; } .ds-t { fill: #1e40af; }
+      .vm { fill: #f5f3ff; stroke: #8b5cf6; } .vm-t { fill: #5b21b6; }
+      .dec { fill: #fffbeb; stroke: #f59e0b; } .dec-t { fill: #92400e; }
+      .box { stroke-width: 1.5; }
+      .panel { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1.2; }
+      .ptitle { font-size: 12px; font-weight: 700; fill: #475569; letter-spacing: .06em; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="790" rx="16" fill="#ffffff"/>
+
+  <text x="30" y="40" font-size="20" font-weight="700" fill="#0f172a">Ask: how a question is answered</text>
+  <text x="30" y="60" font-size="12" fill="#64748b">One Mestari feature. Most numbers are already on the plan; Ask handles the rest. Default profile: hybrid.</text>
+
+  <!-- input -->
+  <rect x="400" y="76" width="200" height="38" rx="19" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="500" y="100" class="t" fill="#334155">Drawing + question</text>
+  <path class="ln" d="M500,114 V138" marker-end="url(#a)"/>
+
+  <!-- advice -->
+  <rect class="box dec" x="360" y="140" width="280" height="52" rx="10"/>
+  <text x="500" y="162" class="t dec-t">Advice question? (web UI only)</text>
+  <text x="500" y="180" class="s dec-t">“do we need more doors / toilets?”</text>
+  <path class="ln" d="M640,166 H698" marker-end="url(#a)"/>
+  <text x="669" y="160" class="lbl" text-anchor="middle">yes</text>
+  <rect class="box ds" x="700" y="140" width="270" height="52" rx="10"/>
+  <text x="835" y="162" class="t ds-t">Rule check</text>
+  <text x="835" y="180" class="s ds-t">DeepSeek picks a rule · shapely checks</text>
+  <path class="ln" d="M955,192 V658" marker-end="url(#a)"/>
+
+  <path class="ln" d="M500,192 V222" marker-end="url(#a)"/>
+  <text x="508" y="212" class="lbl">no</text>
+
+  <!-- inspect -->
+  <rect class="box code" x="330" y="224" width="340" height="52" rx="10"/>
+  <text x="500" y="246" class="t code-t">inspect_file · code, no LLM</text>
+  <text x="500" y="264" class="s code-t">IFC? DXF? PDF text layer? schedules? raster only?</text>
+
+  <path class="ln" d="M440,276 V300 H330 V318" marker-end="url(#a)"/>
+  <text x="432" y="294" class="lbl" text-anchor="end">IFC · DXF · PDF text</text>
+  <path class="ln" d="M560,276 V300 H795 V318" marker-end="url(#a)"/>
+  <text x="600" y="294" class="lbl">PNG · JPG · scanned PDF · router skipped</text>
+
+  <!-- structured panel -->
+  <rect class="panel" x="30" y="320" width="600" height="300" rx="12"/>
+  <text x="46" y="342" class="ptitle">STRUCTURED DATA</text>
+
+  <rect class="box ds" x="200" y="360" width="260" height="52" rx="10"/>
+  <text x="330" y="382" class="t ds-t">DeepSeek router</text>
+  <text x="330" y="400" class="s ds-t">picks tools · fills arguments</text>
+
+  <path class="ln" d="M330,412 V432 H125 V455" marker-end="url(#a)"/>
+  <path class="ln" d="M330,432 V455" marker-end="url(#a)"/>
+  <path class="ln" d="M330,432 H530 V455" marker-end="url(#a)"/>
+
+  <rect class="box code" x="40" y="457" width="170" height="56" rx="10"/>
+  <text x="125" y="480" class="t code-t">Terminal tool</text>
+  <text x="125" y="498" class="s code-t">code computes the answer</text>
+  <text x="125" y="532" class="lbl" text-anchor="middle">one LLM call in total</text>
+
+  <rect class="box code" x="240" y="457" width="180" height="56" rx="10"/>
+  <text x="330" y="480" class="t code-t">IFC / DXF info tool</text>
+  <text x="330" y="498" class="s code-t">code extracts a table</text>
+
+  <rect class="box code" x="440" y="457" width="180" height="56" rx="10"/>
+  <text x="530" y="480" class="t code-t">PDF rows / page text</text>
+  <text x="530" y="498" class="s code-t">code extracts schedule rows</text>
+
+  <path class="ln" d="M330,513 V538" marker-end="url(#a)"/>
+  <path class="ln" d="M530,513 V538" marker-end="url(#a)"/>
+
+  <rect class="box ds" x="240" y="540" width="180" height="52" rx="10"/>
+  <text x="330" y="562" class="t ds-t">DeepSeek composes</text>
+  <text x="330" y="580" class="s ds-t">cites evidence ids</text>
+
+  <rect class="box vm" x="440" y="540" width="180" height="52" rx="10"/>
+  <text x="530" y="562" class="t vm-t">Kimi composes</text>
+  <text x="530" y="580" class="s vm-t">schedule lookup and reading</text>
+
+  <!-- loop back for more tools -->
+  <path class="ln" d="M240,566 H225 V386 H200" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <text x="194" y="378" class="lbl" text-anchor="end">more tools, up to 4 turns</text>
+
+  <!-- router to vision -->
+  <path class="ln" d="M460,386 H658" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <text x="560" y="378" class="lbl" text-anchor="middle">ask_vision_model</text>
+
+  <!-- vision panel -->
+  <rect class="panel" x="660" y="320" width="270" height="300" rx="12" fill="#faf8ff" style="fill:#faf8ff;stroke:#e9d5ff"/>
+  <text x="676" y="342" class="ptitle">VISION</text>
+
+  <rect class="box vm" x="675" y="360" width="240" height="68" rx="10"/>
+  <text x="795" y="381" class="t vm-t">Windows · Gemini</text>
+  <text x="795" y="399" class="s vm-t">CubiCasa “How many … windows”</text>
+  <text x="795" y="415" class="s vm-t">checks detector boxes, adds missed</text>
+
+  <rect class="box vm" x="675" y="440" width="240" height="68" rx="10"/>
+  <text x="795" y="461" class="t vm-t">Other counts · Gemini</text>
+  <text x="795" y="479" class="s vm-t">CubiCasa “How many …”</text>
+  <text x="795" y="495" class="s vm-t">lists objects, code counts the list</text>
+
+  <rect class="box vm" x="675" y="520" width="240" height="68" rx="10"/>
+  <text x="795" y="541" class="t vm-t">Everything else · Kimi</text>
+  <text x="795" y="559" class="s vm-t">other rasters and question forms,</text>
+  <text x="795" y="575" class="s vm-t">the router's ask_vision_model</text>
+
+  <!-- to result -->
+  <path class="ln" d="M125,540 V658" marker-end="url(#a)"/>
+  <path class="ln" d="M330,592 V658" marker-end="url(#a)"/>
+  <path class="ln" d="M530,592 V658" marker-end="url(#a)"/>
+  <path class="ln" d="M795,620 V658" marker-end="url(#a)"/>
+
+  <!-- result -->
+  <rect x="30" y="660" width="940" height="60" rx="12" fill="#0f172a"/>
+  <text x="500" y="685" class="t" fill="#ffffff">Result: answer · unit · method · evidence · deterministic flag</text>
+  <text x="500" y="705" class="s" fill="#cbd5e1">evidence = IFC GlobalId · DXF entity handle · schedule row · box on the plan</text>
+
+  <!-- legend -->
+  <g font-size="12" fill="#475569">
+    <rect class="box code" x="30" y="746" width="14" height="14" rx="3"/><text x="52" y="758">code</text>
+    <rect class="box ds" x="110" y="746" width="14" height="14" rx="3"/><text x="132" y="758">DeepSeek</text>
+    <rect class="box vm" x="214" y="746" width="14" height="14" rx="3"/><text x="236" y="758">Gemini / Kimi</text>
+    <rect class="box dec" x="340" y="746" width="14" height="14" rx="3"/><text x="362" y="758">decision</text>
+    <text x="970" y="758" text-anchor="end" fill="#94a3b8">dashed = optional path</text>
+  </g>
+</svg>

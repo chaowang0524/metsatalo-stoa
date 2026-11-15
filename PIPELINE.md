@@ -8,6 +8,13 @@
 
 ## Overview
 
+Ask is one Mestari feature: most counts, areas and lengths are already computed and shown on the plan (see the [overview in the README](README.md#how-it-works)). This page covers how Ask answers the questions the plan doesn't.
+
+![Ask pipeline](docs/pipeline.svg)
+
+<details>
+<summary>Plain-text version</summary>
+
 ```text
 drawing + question
    │
@@ -36,6 +43,8 @@ inspect_file   code, no LLM: IFC? DXF? PDF text layer? schedules? raster only?
 every path ──► answer · unit · method · evidence · deterministic flag
                evidence = IFC GlobalId · DXF handle · schedule row · box on the plan
 ```
+
+</details>
 
 ## Step by step
 

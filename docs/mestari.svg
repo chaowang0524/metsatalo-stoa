@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .t { font-size: 14px; font-weight: 600; text-anchor: middle; }
+      .s { font-size: 12px; text-anchor: middle; }
+      .tag { font-size: 11px; font-weight: 600; text-anchor: middle; letter-spacing: .03em; }
+      .lbl { font-size: 11px; fill: #64748b; }
+      .ln { fill: none; stroke: #94a3b8; stroke-width: 1.6; }
+      .in { fill: #f1f5f9; stroke: #94a3b8; } .in-t { fill: #334155; }
+      .code { fill: #ecfdf5; stroke: #10b981; } .code-t { fill: #065f46; }
+      .ds { fill: #eff6ff; stroke: #3b82f6; } .ds-t { fill: #1e40af; }
+      .vm { fill: #f5f3ff; stroke: #8b5cf6; } .vm-t { fill: #5b21b6; }
+      .eng { fill: #fff7ed; stroke: #f97316; } .eng-t { fill: #9a3412; }
+      .box { stroke-width: 1.5; }
+      .panel { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1.2; }
+      .ptitle { font-size: 12px; font-weight: 700; fill: #475569; letter-spacing: .06em; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="750" rx="16" fill="#ffffff"/>
+
+  <text x="30" y="40" font-size="20" font-weight="700" fill="#0f172a">Mestari: how it works</text>
+  <text x="30" y="60" font-size="12" fill="#64748b">Facts are computed once per drawing and shown on the plan. The engineer checks and edits them, and every feature uses the checked plan.</text>
+
+  <!-- inputs -->
+  <rect class="box in" x="40" y="80" width="280" height="48" rx="24"/>
+  <text x="180" y="100" class="t in-t">CAD plan</text>
+  <text x="180" y="117" class="s in-t">DXF (+ its PDF)</text>
+  <rect class="box in" x="360" y="80" width="280" height="48" rx="24"/>
+  <text x="500" y="100" class="t in-t">BIM model</text>
+  <text x="500" y="117" class="s in-t">IFC + plan rendered from it</text>
+  <rect class="box in" x="680" y="80" width="280" height="48" rx="24"/>
+  <text x="820" y="100" class="t in-t">Scan or image</text>
+  <text x="820" y="117" class="s in-t">PNG · JPG · scanned or other PDF</text>
+  <text x="830" y="146" class="lbl">from the dataset or ⤒ Upload</text>
+
+  <path class="ln" d="M180,128 V150" marker-end="url(#a)"/>
+  <path class="ln" d="M500,128 V150" marker-end="url(#a)"/>
+  <path class="ln" d="M820,128 V150" marker-end="url(#a)"/>
+
+  <!-- 1 facts -->
+  <rect class="panel" x="30" y="152" width="940" height="150" rx="12"/>
+  <text x="46" y="174" class="ptitle">1 · FACTS, COMPUTED ONCE PER DRAWING</text>
+
+  <rect class="box code" x="40" y="188" width="280" height="100" rx="10"/>
+  <text x="180" y="212" class="t code-t">Exact CAD geometry</text>
+  <text x="180" y="232" class="s code-t">rooms, areas, doors, windows,</text>
+  <text x="180" y="249" class="s code-t">fixtures, baseboard lengths</text>
+  <text x="180" y="274" class="tag code-t">EXACT · NO LLM</text>
+
+  <rect class="box code" x="360" y="188" width="280" height="100" rx="10"/>
+  <text x="500" y="212" class="t code-t">Exact BIM queries</text>
+  <text x="500" y="232" class="s code-t">elements, spaces, materials,</text>
+  <text x="500" y="249" class="s code-t">piping plans per storey</text>
+  <text x="500" y="274" class="tag code-t">EXACT · NO LLM</text>
+
+  <rect class="box vm" x="680" y="188" width="280" height="100" rx="10"/>
+  <text x="820" y="212" class="t vm-t">Gemini full-plan detection</text>
+  <text x="820" y="232" class="s vm-t">rooms and components with boxes,</text>
+  <text x="820" y="249" class="s vm-t">one call (~$0.10–0.18), cached</text>
+  <text x="820" y="274" class="tag vm-t">DETECTED · TO CHECK</text>
+
+  <path class="ln" d="M180,302 V328" marker-end="url(#a)"/>
+  <path class="ln" d="M500,302 V328" marker-end="url(#a)"/>
+  <path class="ln" d="M820,302 V328" marker-end="url(#a)"/>
+
+  <!-- 2 plan view -->
+  <rect class="box in" x="30" y="330" width="940" height="70" rx="12" style="fill:#ffffff"/>
+  <text x="500" y="356" class="t in-t">2 · Plan view with the Facts tab</text>
+  <text x="500" y="378" class="s in-t">counts · areas · lengths, already on screen; hover a fact and its objects light up on the plan (exact CAD / BIM shapes or detected boxes)</text>
+
+  <path class="ln" d="M500,400 V428" marker-end="url(#a)"/>
+
+  <!-- 3 engineer -->
+  <rect class="box eng" x="200" y="430" width="600" height="70" rx="12"/>
+  <text x="500" y="456" class="t eng-t">3 · The engineer checks and edits</text>
+  <text x="500" y="478" class="s eng-t">add · remove · reject “not on site” · stamp from the symbol library · ⌘Z, saved per drawing</text>
+
+  <path class="ln" d="M800,465 H880 V402" marker-end="url(#a)"/>
+  <text x="888" y="440" class="lbl">counts update</text>
+  <text x="888" y="454" class="lbl">at once</text>
+
+  <path class="ln" d="M500,500 V536" marker-end="url(#a)"/>
+
+  <!-- 4 use the plan -->
+  <rect class="panel" x="30" y="538" width="940" height="150" rx="12"/>
+  <text x="46" y="560" class="ptitle">4 · EVERYTHING BELOW USES THE CHECKED PLAN</text>
+
+  <rect class="box code" x="40" y="574" width="215" height="100" rx="10"/>
+  <text x="147" y="598" class="t code-t">€ Cost → quote</text>
+  <text x="147" y="618" class="s code-t">quantities × cited Finnish prices;</text>
+  <text x="147" y="635" class="s code-t">/quote/&lt;id&gt; to approve</text>
+  <text x="147" y="660" class="tag code-t">NO LLM</text>
+
+  <rect class="box code" x="275" y="574" width="215" height="100" rx="10"/>
+  <text x="382" y="598" class="t code-t">⤓ Export</text>
+  <text x="382" y="618" class="s code-t">edited plan as</text>
+  <text x="382" y="635" class="s code-t">PNG · JPEG · PDF (A3)</text>
+  <text x="382" y="660" class="tag code-t">NO LLM</text>
+
+  <rect class="box ds" x="510" y="574" width="215" height="100" rx="10"/>
+  <text x="617" y="598" class="t ds-t">Ask</text>
+  <text x="617" y="618" class="s ds-t">advice checks and further</text>
+  <text x="617" y="635" class="s ds-t">questions, with evidence</text>
+  <text x="617" y="660" class="tag ds-t">LLM · SEE ASK DIAGRAM</text>
+
+  <rect class="box vm" x="745" y="574" width="215" height="100" rx="10"/>
+  <text x="852" y="598" class="t vm-t">3D</text>
+  <text x="852" y="618" class="s vm-t">Gemini image render</text>
+  <text x="852" y="635" class="s vm-t">of the plan</text>
+  <text x="852" y="660" class="tag vm-t">IMAGE MODEL · ~30 s</text>
+
+  <!-- legend -->
+  <g font-size="12" fill="#475569">
+    <rect class="box code" x="30" y="716" width="14" height="14" rx="3"/><text x="52" y="728">code, exact</text>
+    <rect class="box ds" x="140" y="716" width="14" height="14" rx="3"/><text x="162" y="728">DeepSeek</text>
+    <rect class="box vm" x="244" y="716" width="14" height="14" rx="3"/><text x="266" y="728">Gemini / Kimi</text>
+    <rect class="box eng" x="370" y="716" width="14" height="14" rx="3"/><text x="392" y="728">engineer</text>
+  </g>
+</svg>

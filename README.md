@@ -9,16 +9,23 @@ Onsite engineers lose hours every day hunting through drawings and BIM models
 for a number: how many windows are on this floor, what is the area of this
 apartment, how thick is that wall. How much do these cost. General-purpose AI models often get these wrong, and nothing shows the engineer *why* they got a number. 
 
-Mestari answers natural-language questions about a drawing or BIM model, in any
-language. Every answer comes with the evidence it was computed from, such as an
-IFC `GlobalId`, a DXF entity handle or a PDF table row, and that evidence is
-highlighted on the plan. An engineer can check the answer in seconds and fix it
-if it is wrong.
+Mestari puts the numbers on the plan before anyone asks. When a drawing is
+loaded, it computes the counts, areas and lengths once: from the CAD geometry or
+BIM model when the drawing has one, or from a single vision-model pass on a
+scan. Each number is drawn on the plan, so the engineer sees exactly which
+doors, windows or rooms it counted. The engineer checks the plan and fixes what
+is wrong, and the cost estimate, quote, export and Ask all work from that
+checked plan.
+
+For anything the plan doesn't already show, **Ask** answers natural-language
+questions in any language. Every answer comes with the evidence it was computed
+from, such as an IFC `GlobalId`, a DXF entity handle or a PDF table row, and that
+evidence is highlighted on the plan, so the engineer can check it in seconds.
 
 The design rule is **deterministic first**. If a drawing has vector or BIM data
-(DXF, IFC, a PDF text layer), code reads the answer straight from the geometry,
-and a cheap LLM only picks which tool to run. Vision models are used only for
-raster scans, and their answers are marked as needing a human check. This keeps
+(DXF, IFC, a PDF text layer), code reads the numbers straight from the geometry,
+and for Ask a cheap LLM only picks which tool to run. Vision models are used only
+for raster scans, and their results are marked as needing a human check. This keeps
 answers exact and cheap. Better frontier models will improve the vision
 fallback, but they won't replace the deterministic part.
 
@@ -142,14 +149,29 @@ accuracy, cost and latency per source at the end.
 
 | Feature | What it gives the engineer |
 |---|---|
-| Grounded facts, at a glance | Engineers can component counts and room areas for every plan as they are pre-computed and straightforwardly shown on the plan. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
+| Grounded facts, at a glance | Engineers see component counts and room areas for every plan as soon as it opens: they are pre-computed and shown on the plan. They come from tools first (DXF geometry, IFC queries, PDF tables), so every number points to the exact CAD entity, IFC element or table row it came from |
 | Live editing on site | Engineers get to add, remove or stamp doors, windows, fixtures and other components on the plan. Counts update straight away |
 | Cost estimate, faster | Engineers get the cost at once with quantities × cited Finnish material and labour prices which are also editable. "Send quote…" turns it into a quote with an approval link, so the estimate is ready minutes after the plan is checked |
 | Human in the loop | The counting, model, the cost and even previous human annotations can be wrong. Every object stays visible and editable, edits are saved per drawing, and ⌘Z undoes them |
+| Ask | Questions the Facts tab doesn't answer, in any language, with the evidence highlighted on the plan. "Do we need more doors / toilets?" runs a rule check on the edited plan |
 | Upload | Any DXF, IFC, PDF or scanned plan becomes a checkable plan |
 | Cost logging | Every model call is logged with its tokens, latency and USD cost (`logs/verda_calls.jsonl`) |
 
 ## How it works
+
+![Mestari overview: facts computed once per drawing, shown on the plan, checked and edited by the engineer, then used by Cost, Export, Ask and 3D](docs/mestari.svg)
+
+Most of Mestari runs without an LLM. The facts for CAD and BIM drawings are
+computed by code, and raster scans need one cached vision call per drawing.
+After that, the plan view, the engineer's edits, the cost estimate, the quote
+and the export are plain code. Only Ask and 3D call a model per click.
+
+### Ask: answering a question
+
+![Ask pipeline: advice check, file inspection, DeepSeek router with deterministic tools, vision for raster drawings, answer with evidence](docs/pipeline.svg)
+
+<details>
+<summary>Plain-text version</summary>
 
 ```text
 drawing + question
@@ -179,6 +201,8 @@ inspect_file   code, no LLM: IFC? DXF? PDF text layer? schedules? raster only?
 every path ──► answer · unit · method · evidence · deterministic flag
                evidence = IFC GlobalId · DXF handle · schedule row · box on the plan
 ```
+
+</details>
 
 - **IFC** (`stoa/tools/ifc_tools.py`): counts, quantity sums, room areas, type
   breakdowns and material layers, read from the model with IfcOpenShell.
