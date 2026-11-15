@@ -34,32 +34,31 @@ without an LLM.
 A three-minute tour:
 
 1. **Read the Facts tab.** Pre-computed counts and areas for the plan (rooms,
-   doors, windows, fixtures and so on). **Hover or click a fact to highlight its
-   objects on the plan. Click the same item again to zoom back out.**
+   doors, windows, fixtures and so on). **Hover a fact to highlight its objects
+   on the plan, click it to list them, then click an object in the list to zoom
+   to it. Click the same object again to zoom back out.**
 2. **Edit live.** Add or remove objects right on the plan:
    - **click a component kind in the Facts panel, then click the plan to add one;**
-   - **right-click an object to remove it**;
+   - **right-click an object to remove it** (or to reject a detected one as
+     "not on site");
    - "▦ Library…" stamps real symbols collected from the CAD and IFC plans, at
      real-world size.
 
    Counts, highlights and the cost estimate update immediately, and ⌘Z undoes
    any edit.
 3. **Human in the loop.** The engineer has the last word on every annotation.
-   On raster scans the objects come from a vision model, which makes mistakes, so does human. Edits are saved on the server per drawing, so the corrected plan is what the next
-   person sees, and what Cost and Export use. 
-4. **Ask a question.** For further information on the floor plan, click "💬 Ask a question" and type in any language, for
-   example *"How many windows are there?"*, *"What is the total area of the
-   bathrooms?"* or *"Kuinka monta ovea pohjapiirroksessa on?"*. The answer is
-   badged **exact** (computed from vector or BIM data) or **model answer ·
-   verify** (vision). "Highlight references" shows only the evidence it
-   used on the plan, and "Sources and calculation details" lists the method, the tools called and the cost.
-5. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
-   material and labour prices. Each price links to its source (Taloon.com,
-   K-Rauta, or published hourly rates). You can overwrite any quantity or price,
-   then "Send quote…" freezes a quote for internal approval or the client. Its `/quote/<id>` link lets a client approve
-   it, ask for changes, print it or download a CSV.
-6. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF.
-7. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
+   On raster scans the objects come from a vision model, which makes mistakes,
+   and so do people. Edits are saved on the server per drawing, so the
+   corrected plan is what the next person sees, and what Ask, Cost and Export
+   use.
+4. **Price it.** The "€ Cost" tab multiplies the plan's quantities by Finnish
+   material and labour prices (excl. VAT). Each price links to its source
+   (Taloon.com, K-Rauta, or published hourly rates). You can overwrite any
+   quantity or price, then "Send quote…" freezes a quote for internal approval
+   or for the client. Its `/quote/<id>` link lets the recipient approve it, ask
+   for changes, print it or download a CSV.
+5. **Share it.** "⤓ Export" saves the edited plan as PNG, JPEG or PDF (A3).
+6. **Bring your own drawing.** "⤒ Upload" (or drag and drop) accepts one or many
    files:
    - DXF: exact CAD facts;
    - plan SVG + IFC: BIM facts;
@@ -71,10 +70,16 @@ A three-minute tour:
 
    See [Check the results yourself](#check-the-results-yourself) for how to use
    this to test us on your own drawings.
+7. **Ask a question.** For further questions, type a question such as *"Are there enough doors for this plan?"* "Highlight references" shows only the
+   evidence the answer used on the plan. "Sources and calculation details"
+   shows whether the answer is **exact** (computed from vector or BIM data) or
+   a **model answer · verify** (vision), plus the method, the tools called and
+   the cost. Answers that include your plan edits are marked "✎ includes
+   engineer corrections".
 
 ## Check the results yourself 
 
-You don't need our evaluation scripts. Take drawings from the dataset, upload
+Try it yourself in our interactive UI. Take drawings from the dataset, upload
 them in the live demo, and compare what the UI says with the reference answers
 in `questions.jsonl`. The preview drawings are already loaded, so for a fair
 test use drawings from the **full dataset** that we have not seen.
