@@ -151,83 +151,34 @@ accuracy, cost and latency per source at the end.
 
 ## How it works
 
-```mermaid
-%%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 28, "rankSpacing": 44}, "themeVariables": {"fontFamily": "Arial, sans-serif", "fontSize": "14px", "lineColor": "#94a3b8"}}}%%
-flowchart TB
-    subgraph INPUT["Input and inspection"]
-        direction TB
-        A(["Drawing + natural-language question"])
-        U{"Web UI only: advice question?<br/>'do we need more doors / toilets?'"}
-        V["Rule check on the plan's facts<br/>DeepSeek picks the rule · shapely checks rooms"]
-        B{"Inspect file and linked data<br/>inspect_file · no LLM"}
-        A --> U
-        U -->|"yes"| V
-        U -->|"no"| B
-    end
+```text
+drawing + question
+   │
+   ├─ web UI only: advice question? ("do we need more doors / toilets?")
+   │     └──► DeepSeek picks a rule ──► shapely checks every room ──► Yes / Possibly… check
+   │
+   ▼
+inspect_file   code, no LLM: IFC? DXF? PDF text layer? schedules? raster only?
+   │
+   ├─ IFC · DXF · PDF text ──► DeepSeek router: picks tools and fills arguments
+   │                               │
+   │       ┌───────────────────────┼───────────────────────┬────────────────────┐
+   │       ▼                       ▼                       ▼                    ▼
+   │   terminal tool           IFC / DXF info tool     PDF rows / page text   ask_vision_model
+   │   code computes the       code extracts a table   code extracts rows     ──► vision ↓
+   │   answer: 1 LLM call      DeepSeek composes       Kimi composes
+   │                           ↺ more tools, up to 4 turns
+   │
+   └─ PNG · JPG · scanned PDF ──► vision (router skipped)
+                                    ├─ CubiCasa "How many … windows?" ──► Gemini checks the
+                                    │    numbered detector boxes and adds missed windows
+                                    ├─ CubiCasa "How many …?" ──► Gemini lists every object
+                                    │    with its location; code counts the list
+                                    └─ anything else ──► Kimi
 
-    subgraph STRUCTURED["Structured data"]
-        direction TB
-        R["DeepSeek router<br/>picks tools · fills arguments"]
-        T{"What does the tool return?"}
-        D["Code computes the answer<br/>counts · areas · lengths · schedule sums"]
-        I["Code extracts facts<br/>element tables · model overview · room list"]
-        C1["DeepSeek composes the answer<br/>from the tool output, citing evidence ids"]
-        P["Code extracts PDF content<br/>schedule rows · legends · notes"]
-        C2["Kimi composes the answer<br/>schedule lookup and reading"]
-        R --> T
-        T -->|"terminal tool, answers fully"| D
-        T -->|"IFC / DXF info tool"| I
-        T -->|"PDF rows or page text"| P
-        I --> C1
-        P --> C2
-        C1 -.->|"more tools, up to 4 turns"| R
-    end
-
-    subgraph VISION["Vision"]
-        direction TB
-        S{"Drawing source"}
-        W["Gemini 4 Hydrogen · windows<br/>verifies numbered detector boxes · adds missed windows"]
-        G["Gemini 4 Hydrogen · other counts<br/>finds the dwelling · lists every object"]
-        N["Code counts the list<br/>keeps scope and per-object position"]
-        K["Kimi<br/>other raster drawings and vision fallback"]
-        S -->|"CubiCasa 'How many … windows'"| W
-        S -->|"CubiCasa 'How many …'"| G
-        W --> N
-        G --> N
-        S -->|"other sources or question forms"| K
-    end
-
-    B -->|"IFC / DXF / PDF text layer"| R
-    B -->|"PNG / JPG / scanned PDF<br/>skip the router"| S
-    T -->|"ask_vision_model"| S
-
-    V --> OUT
-    D --> OUT
-    C1 --> OUT
-    C2 --> OUT
-    N --> OUT
-    K --> OUT
-    OUT(["Result<br/>answer · unit · method · evidence · deterministic flag"])
-
-    classDef input fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1.5px
-    classDef code fill:#ecfdf5,stroke:#10b981,color:#065f46,stroke-width:1.5px
-    classDef deepseek fill:#eff6ff,stroke:#3b82f6,color:#1e40af,stroke-width:1.5px
-    classDef model fill:#f5f3ff,stroke:#8b5cf6,color:#5b21b6,stroke-width:1.5px
-    classDef decision fill:#fffbeb,stroke:#f59e0b,color:#92400e,stroke-width:1.5px
-    classDef output fill:#0f172a,stroke:#0f172a,color:#ffffff,stroke-width:2px
-
-    class A input
-    class B,D,I,P,N code
-    class R,C1,V deepseek
-    class G,W,K,C2 model
-    class T,S,U decision
-    class OUT output
-    style INPUT fill:#f8fafc,stroke:#e2e8f0
-    style STRUCTURED fill:#f8fafc,stroke:#e2e8f0
-    style VISION fill:#faf8ff,stroke:#e9d5ff
+every path ──► answer · unit · method · evidence · deterministic flag
+               evidence = IFC GlobalId · DXF handle · schedule row · box on the plan
 ```
-
-**Legend:** green is code, blue is DeepSeek, purple is Gemini or Kimi, and the dark node is the final result.
 
 - **IFC** (`stoa/tools/ifc_tools.py`): counts, quantity sums, room areas, type
   breakdowns and material layers, read from the model with IfcOpenShell.
