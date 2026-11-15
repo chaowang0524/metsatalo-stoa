@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from stoa import pipeline
-from stoa.ui import corrections, library
+from stoa.ui import advice, corrections, library
 from stoa.ui import render as render3d
 from stoa.ui import uploads
 from stoa.ui.facts import DATA, OUT
@@ -211,6 +211,12 @@ async def ask(q: Ask):
     doc = json.loads(_doc_path(source, stem).read_text(encoding="utf-8"))
     # Uploads carry their own path and kind; dataset drawings are found by source.
     path = Path(doc["path"]) if doc.get("path") else DATA / source / doc["file"]
+    saved = _edits_path(source, stem)
+    edits = q.edits.model_dump() if q.edits else json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else None
+    # "Do we need more doors / windows / toilets?": a rule check on the plan's
+    # objects and rooms, edits included; the LLM only picks the rule.
+    if out := await run_in_threadpool(advice.answer, doc, q.question, edits, context={"ui": True, "file": doc["file"]}):
+        return out
     res = await run_in_threadpool(pipeline.answer, path, q.question, {"ui": True}, q.router, doc.get("floor_plan"))
     out = res.to_json()
     # Evidence refs (IFC GlobalIds, DXF handles) are the same refs as the
@@ -228,8 +234,6 @@ async def ask(q: Ask):
             out["items"].append({"ref": e.ref, "label": e.label, "value": e.value, "shape": shape})
     out["unplaced"] = len(res.answer.evidence) - len(out["items"]) if res.answer else 0
     # The answer comes from the source file; fold in the engineer's edits to the plan.
-    saved = _edits_path(source, stem)
-    edits = q.edits.model_dump() if q.edits else json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else None
     if edits and res.answer:
         corrections.apply(doc, edits, q.question, [ev.ref for ev in res.answer.evidence], out)
     return out

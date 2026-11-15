@@ -917,6 +917,8 @@ $("#ask-form").onsubmit = async (e) => {
   qa.scrollIntoView({ block: "end" });
 };
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 function showAnswer(box, res) {
   const ans = res.answer;
   if (!ans) { box.replaceChildren(h("span", { className: "muted", textContent: res.error || "No answer" })); return; }
@@ -928,7 +930,7 @@ function showAnswer(box, res) {
     h("div", {}, h("span", { className: `badge ${ans.deterministic ? "det" : "model"}`,
       textContent: ans.deterministic ? "exact" : "model answer · verify" }), " ", ans.method),
     ans.note ? h("div", { className: "sub", textContent: ans.note }) : "",
-    h("div", { className: "sub", textContent: `${tools} · ${res.llm_calls} LLM calls · ${res.prompt_tokens + res.completion_tokens} tokens · ${cost}` }),
+    h("div", { className: "sub", textContent: `${tools} · ${plural(res.llm_calls, "LLM call")} · ${res.prompt_tokens + res.completion_tokens} tokens · ${cost}` }),
   );
   // The engineer's plan edits, folded in by the server (stoa.ui.corrections).
   const fix = res.corrections;
@@ -937,12 +939,12 @@ function showAnswer(box, res) {
     const parts = [fix.removed && `−${fix.removed} rejected`, fix.added && `+${fix.added} added`].filter(Boolean).join(", ");
     fixNote = h("div", { className: "badge edited", textContent: `✎ includes engineer corrections (${parts})`,
       title: `The drawing alone gives ${fix.before}; the engineer's edits to the plan are applied on top.` });
-    details.append(h("div", { className: "sub", textContent: `From the drawing: ${fmt(fix.before, ans.unit)}. Engineer corrections: ${parts} ${kindName(fix.kind)}.` }));
+    if (fix.before != null) details.append(h("div", { className: "sub", textContent: `From the drawing: ${fmt(fix.before, ans.unit)}. Engineer corrections: ${parts} ${kindName(fix.kind)}.` }));
   } else if (fix?.edits) {
     fixNote = h("div", { className: "sub warn", textContent: fix.rejected_in_evidence
-      ? `⚠ This answer uses ${fix.rejected_in_evidence} object(s) the engineer rejected; it does not reflect the ${fix.edits} plan edit(s).`
-      : fix.kind ? `⚠ Counted without the plan's objects, so the ${fix.edits} engineer edit(s) to ${kindName(fix.kind)} are not applied. Check the Facts count.`
-      : `This answer is from the drawing alone; the plan has ${fix.edits} engineer edit(s) it does not reflect.` });
+      ? `⚠ This answer uses ${fix.rejected_in_evidence} object(s) the engineer rejected; it does not reflect the ${plural(fix.edits, "plan edit")}.`
+      : fix.kind ? `⚠ Counted without the plan's objects, so the ${plural(fix.edits, "engineer edit")} to ${kindName(fix.kind)} are not applied. Check the Facts count.`
+      : `This answer is from the drawing alone; the plan has ${plural(fix.edits, "engineer edit")} it does not reflect.` });
   }
   box.replaceChildren(
     h("div", { className: numeric ? "big" : "answer-text", textContent: ans.value !== null && typeof ans.value === "object" ? "see list" : fmt(ans.value, ans.unit) }),
@@ -963,7 +965,7 @@ function showAnswer(box, res) {
     };
     box.append(btn);
   }
-  if (res.unplaced) details.append(h("div", { className: "sub", textContent: `${res.unplaced} evidence items are not drawn on this plan.` }));
+  if (res.unplaced) details.append(h("div", { className: "sub", textContent: `${plural(res.unplaced, "evidence item")} ${res.unplaced === 1 ? "is" : "are"} not drawn on this plan.` }));
 }
 
 // ---------- 3D render and sharing it ----------
